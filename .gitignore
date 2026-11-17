@@ -1,0 +1,24 @@
+# For local development files
+.local/
+/mockups/
+/DRAFT.md
+
+# Local environment, logs and editor/OS temporary files
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Node.js dependencies and build artifacts
+node_modules/
+main.js
+main.js.map
+dist/
+coverage/
+data.json

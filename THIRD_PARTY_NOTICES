@@ -1,0 +1,61 @@
+ANSI parsing libraries
+======================
+
+Anser 2.3.5: https://github.com/IonicaBizau/anser
+License and copyright: LICENSES/Anser-MIT.txt
+
+ansi-regex 6.6.0: https://github.com/chalk/ansi-regex
+License and copyright: LICENSES/ansi-regex-MIT.txt
+
+Font Awesome Free Hippo icon
+===========================
+
+Source: https://github.com/FortAwesome/Font-Awesome/blob/7.3.1/svgs/solid/hippo.svg
+Font Awesome Free 7.3.1, Copyright 2026 Fonticons, Inc.
+https://fontawesome.com
+SVG icon license: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+Upstream license: https://github.com/FortAwesome/Font-Awesome/blob/7.3.1/LICENSE.txt
+
+The supplied SVG is retained in src/hippo.svg with its original notice.
+Its vertical viewBox margins are cropped without changing the path geometry.
+It is rendered as a color mask and mirrored horizontally for one of the
+output toggle states. No endorsement by Fonticons, Inc. is implied.
+Codeblock Customizer language definitions and SVG icons
+======================================================
+
+Source: https://github.com/mugiwara85/CodeblockCustomizer
+Source revision: 7e92adb12fccd7bc66ab0984e9503d50e8f1feee
+Source file: src/Const.ts (Languages, manualLang, and Icons)
+Copyright (c) 2023 mugiwara85
+License for the source definitions: LICENSES/CodeblockCustomizer-MIT.txt
+
+The language tables were regrouped into canonical IDs, labels, and aliases.
+The Languages table takes precedence over manualLang, matching CC's lookup.
+SVG entries were extracted into separate files in src/icons. SVG fragments
+were wrapped in a 32x32 SVG root. Complete SVG roots were nested with their
+viewBox retained and their fixed width/height removed, matching CC's framing.
+No artwork was intentionally redrawn or recolored.
+
+Upstream Const.ts identifies these icon collections as references:
+
+- vscode-icons: https://github.com/vscode-icons/vscode-icons
+  Copyright The vscode-icons Contributors and the respective artwork owners.
+  Its README distinguishes MIT-licensed source code from CC BY-SA 4.0 icons;
+  branded icons are subject to their respective copyright licenses.
+  https://github.com/vscode-icons/vscode-icons#license
+  CC BY-SA 4.0 terms: LICENSES/CC-BY-SA-4.0.txt
+  https://creativecommons.org/licenses/by-sa/4.0/
+
+- Devicon: https://github.com/devicons/devicon
+  Copyright (c) 2015 konpa and the respective artwork owners.
+  Project license: LICENSES/Devicon-MIT.txt
+  https://github.com/devicons/devicon/blob/master/LICENSE
+
+The upstream table does not supply a per-icon provenance/license manifest.
+This notice records the upstream references; it does not assert that every
+SVG is MIT-licensed or that all brand permissions have been verified.
+Product names, logos, and trademarks belong to their respective owners.
+Use is for language/tool identification and does not imply endorsement.
+Before public redistribution, review the selected branded assets against
+their owners' policies and retain the notices and licenses with the bundle.

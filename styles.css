@@ -1,0 +1,672 @@
+.motto-header {
+  --motto-header-background: var(--motto-light-background, var(--code-background));
+  --motto-header-icon-size: var(--motto-light-icon-size, 28px);
+  --motto-title-weight: var(--motto-light-title-weight, normal);
+  --motto-title-style: var(--motto-light-title-style, normal);
+  --motto-title-size: var(--motto-light-title-size, 14px);
+  --motto-title-color: var(--motto-light-title-color, var(--text-normal));
+  --motto-label-default-background: rgba(0, 0, 0, 0.1);
+  --motto-label-background: var(--motto-light-label-background, var(--motto-label-default-background));
+  --motto-label-color: var(--motto-light-label-color, var(--text-muted));
+  --motto-header-spacing: 15px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  box-sizing: border-box;
+  min-height: calc(var(--motto-header-icon-size) + 0.6em + 1px);
+  overflow: hidden;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-start-start-radius: var(--code-radius, var(--radius-s));
+  border-start-end-radius: var(--code-radius, var(--radius-s));
+  background: var(--motto-header-background);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: 14px;
+  font-weight: normal;
+  line-height: var(--line-height-normal, 1.5);
+  white-space: normal;
+}
+
+body.theme-dark .motto-header {
+  --motto-header-background: var(--motto-dark-background, var(--code-background));
+  --motto-header-icon-size: var(--motto-dark-icon-size, 28px);
+  --motto-title-weight: var(--motto-dark-title-weight, normal);
+  --motto-title-style: var(--motto-dark-title-style, normal);
+  --motto-title-size: var(--motto-dark-title-size, 14px);
+  --motto-title-color: var(--motto-dark-title-color, var(--text-normal));
+  --motto-label-default-background: rgba(255, 255, 255, 0.1);
+  --motto-label-background: var(--motto-dark-label-background, var(--motto-label-default-background));
+  --motto-label-color: var(--motto-dark-label-color, var(--text-muted));
+}
+
+.motto-header[data-header-style] {
+  position: relative;
+  isolation: isolate;
+  background: var(--code-background);
+}
+
+.motto-header[data-header-style] > .motto-header-background.callout[data-callout] {
+  /* Keep native callout color variables, but discard its container styling. */
+  all: unset;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  /* Full CSS colors and RGB channel lists need separate paint layers. */
+  background-color: color-mix(in srgb, var(--callout-color) calc(var(--callout-opacity, 0.1) * 100%), transparent);
+  background-image: linear-gradient(
+    rgba(var(--callout-color), var(--callout-opacity, 0.1)),
+    rgba(var(--callout-color), var(--callout-opacity, 0.1))
+  );
+  pointer-events: none;
+}
+
+.motto-header[data-header-style] > .motto-header-background.callout[data-callout]::before,
+.motto-header[data-header-style] > .motto-header-background.callout[data-callout]::after {
+  content: none;
+}
+
+.motto-header > .motto-header-icon,
+.motto-header > .motto-header-language,
+.motto-header > .motto-header-title {
+  box-sizing: border-box;
+  margin-block: 0;
+  padding-block: 0.3em;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.motto-header > .motto-header-icon,
+.motto-header > .motto-header-language {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--motto-header-spacing);
+  color: var(--text-muted);
+}
+
+.motto-header > .motto-header-icon > img.motto-language-icon,
+.motto-header > .motto-header-icon > svg.svg-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: var(--motto-header-icon-size);
+  height: var(--motto-header-icon-size);
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: none !important;
+  margin: 0 !important;
+  object-fit: contain;
+}
+
+.motto-header > .motto-header-language {
+  margin-inline-end: var(--motto-header-spacing);
+  background: var(--motto-label-background);
+  color: var(--motto-label-color);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+}
+
+.motto-header > .motto-header-title {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline-end: var(--motto-header-spacing);
+  color: var(--motto-title-color);
+  font-size: var(--motto-title-size);
+  font-style: var(--motto-title-style);
+  font-weight: var(--motto-title-weight);
+  line-height: var(--line-height-normal, 1.5);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motto-header > .motto-header-title:first-child {
+  padding-inline-start: var(--motto-header-spacing);
+}
+
+.motto-header[data-fold-state] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.motto-header-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding-inline-end: 8px;
+  margin-inline-start: auto;
+}
+
+.motto-header .motto-header-button {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.motto-header .motto-header-button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.motto-header .motto-header-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.motto-header-copy > svg.svg-icon,
+.motto-header-copy > svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  opacity: 0.65;
+}
+
+.motto-header-toggle::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-inline-end: 1.5px solid var(--text-muted);
+  border-block-end: 1.5px solid var(--text-muted);
+  transform: rotate(45deg);
+}
+
+.motto-header[data-fold-state="folded"] {
+  border-end-start-radius: var(--code-radius, var(--radius-s));
+  border-end-end-radius: var(--code-radius, var(--radius-s));
+}
+
+.motto-header-toggle[aria-expanded="false"]::after {
+  transform: rotate(-45deg);
+}
+
+.markdown-rendered pre.motto-codeblock.motto-codeblock-collapsed {
+  display: none;
+}
+
+.markdown-rendered pre.motto-partial-codeblock,
+.motto-ansi-view pre.motto-partial-codeblock {
+  position: relative;
+  margin-block-end: 0;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+pre.motto-partial-codeblock > code {
+  display: block;
+  max-block-size: var(--motto-preview-height, calc(var(--motto-preview-lines) * 1lh));
+  overflow: hidden;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.motto-preview-end {
+  position: relative;
+}
+
+.markdown-rendered pre.motto-partial-codeblock::after,
+.motto-ansi-view pre.motto-partial-codeblock::after,
+.markdown-source-view.mod-cm6 .cm-line.motto-preview-end::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: calc(min(3, var(--motto-preview-lines)) * 1lh);
+  background: linear-gradient(to bottom, transparent, var(--code-background));
+  pointer-events: none;
+}
+
+.markdown-rendered pre.motto-partial-codeblock::after,
+.motto-ansi-view pre.motto-partial-codeblock::after {
+  inset-block-end: var(--motto-preview-fade-inset, 0px);
+  height: min(
+    var(--motto-preview-fade-height, calc(min(3, var(--motto-preview-lines)) * 1lh)),
+    var(--motto-preview-height, calc(var(--motto-preview-lines) * 1lh))
+  );
+}
+
+.markdown-rendered pre.motto-partial-codeblock > .copy-code-button {
+  z-index: 2;
+}
+
+.motto-expand-footer {
+  --motto-expand-surface: var(--motto-output-background, var(--code-background));
+  --motto-expand-background: color-mix(in srgb, var(--motto-expand-surface), white 30%);
+  --motto-expand-hover-background: color-mix(in srgb, var(--motto-expand-surface), white 42%);
+  box-sizing: border-box;
+  width: 100%;
+  border-radius: 0 0 var(--code-radius, var(--radius-s)) var(--code-radius, var(--radius-s));
+  background: var(--motto-expand-surface);
+}
+
+body.theme-dark .motto-expand-footer {
+  --motto-expand-background: color-mix(in srgb, var(--motto-expand-surface), black 18%);
+  --motto-expand-hover-background: color-mix(in srgb, var(--motto-expand-surface), black 28%);
+}
+
+:is(.markdown-rendered, .markdown-source-view) button.motto-expand-button {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 0 0 var(--code-radius, var(--radius-s)) var(--code-radius, var(--radius-s));
+  margin: 0;
+  background: linear-gradient(to bottom, var(--motto-expand-surface), var(--motto-expand-background));
+  box-shadow: none;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-smaller, 12px);
+  line-height: 1.5;
+  text-align: center;
+  cursor: pointer;
+}
+
+:is(.markdown-rendered, .markdown-source-view) button.motto-expand-button:hover {
+  background: linear-gradient(to bottom, var(--motto-expand-surface), var(--motto-expand-hover-background));
+  color: var(--text-normal);
+}
+
+:is(.markdown-rendered, .markdown-source-view) button.motto-expand-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.markdown-rendered .motto-header {
+  margin-block-start: 1em;
+}
+
+.markdown-rendered .motto-header + pre.motto-codeblock {
+  margin-block-start: 0;
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+
+/* Override Obsidian's block display for direct editor children. */
+.markdown-source-view.mod-cm6 .cm-content > .motto-header {
+  display: flex;
+  margin-block-start: 0.5em;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.motto-codeblock-start {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+
+.motto-line-number {
+  position: absolute;
+  width: var(--motto-line-number-width);
+  color: var(--text-faint, var(--text-muted));
+  opacity: 0.6;
+  font-style: normal;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Take precedence over native HyperMD code-line indentation. */
+.markdown-source-view.mod-cm6 .cm-content > div.cm-line.motto-numbered-line {
+  position: relative;
+  padding-inline-start: calc(var(--size-4-4, 16px) + var(--motto-line-number-width) + 2.25ch);
+}
+
+.motto-numbered-line > .motto-line-number {
+  inset-inline-start: var(--size-4-4, 16px);
+  top: 0;
+  line-height: inherit;
+}
+
+pre.motto-numbered-codeblock {
+  position: relative;
+}
+
+pre.motto-numbered-codeblock > code,
+.motto-ansi-standalone pre.motto-numbered-codeblock > code {
+  display: block;
+  min-block-size: 1lh;
+  padding-inline-start: calc(var(--motto-line-number-width) + 2.25ch);
+}
+
+/* Some native renderers omit the final newline for a trailing blank row. */
+pre.motto-trailing-empty-line > code::after {
+  content: "\a";
+  white-space: pre;
+}
+
+pre.motto-numbered-codeblock > .motto-line-numbers {
+  position: absolute;
+  inset-block: 0;
+  width: var(--motto-line-number-width);
+  font-family: var(--font-monospace);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.motto-command-header {
+  --motto-terminal-color: #15803d;
+  --motto-command-user-color: #33825c;
+  --motto-command-host-color: #966a16;
+  --motto-command-cwd-color: #207d98;
+}
+
+body.theme-dark .motto-command-header {
+  --motto-terminal-color: #4ade80;
+  --motto-command-user-color: #91bd9a;
+  --motto-command-host-color: #dfb76a;
+  --motto-command-cwd-color: #7fcbd6;
+}
+
+.motto-terminal-icon {
+  display: block;
+  width: var(--motto-header-icon-size);
+  height: var(--motto-header-icon-size);
+  background: var(--motto-terminal-color);
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+.motto-command-context {
+  display: flex;
+  flex: 1 1 0;
+  justify-content: flex-end;
+  min-width: 0;
+  overflow: hidden;
+  padding-inline-end: var(--motto-header-spacing);
+  color: var(--text-muted);
+  font: 12px/1.5 var(--font-monospace);
+  white-space: nowrap;
+}
+
+.motto-command-user { flex-shrink: 0; color: var(--motto-command-user-color); }
+.motto-command-host { flex-shrink: 0; color: var(--motto-command-host-color); }
+.motto-command-cwd {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--motto-command-cwd-color);
+  text-overflow: ellipsis;
+}
+
+pre.motto-command-native,
+.motto-command-view .copy-code-button,
+.motto-ansi-view .copy-code-button,
+.markdown-source-view.mod-cm6 .motto-command-start .code-block-flair {
+  display: none !important;
+}
+
+.motto-command-view {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--code-radius, 6px);
+  margin-block: 1em;
+  background: var(--code-background);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: var(--code-size, 13px);
+  line-height: var(--line-height-normal, 1.5);
+}
+
+.motto-header + .motto-command-view {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  margin-block-start: 0;
+}
+
+.motto-command-view[hidden],
+.motto-ansi-view[hidden] { display: none; }
+
+.motto-command-view.motto-command-output-open,
+.motto-command-view.motto-command-partial {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+  margin-block-end: 0;
+}
+
+.motto-command-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 15px;
+}
+
+.motto-command-row + .motto-command-row { padding-block-start: 0; }
+.motto-command-row:has(+ .motto-command-row) { padding-block-end: 4px; }
+
+.motto-command-prompt {
+  color: var(--text-faint, var(--text-muted));
+  font-family: var(--font-monospace);
+  line-height: inherit;
+  user-select: none;
+}
+
+.markdown-rendered .motto-command-row > pre,
+.motto-ansi-view > pre {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  border: none;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.motto-command-row > pre > code,
+.motto-ansi-view > pre > code {
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.motto-command-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+body:not(.theme-dark) :is(.motto-command-tools, .motto-command-line):has(.motto-output-icon-light.motto-output-icon-hippo),
+body.theme-dark :is(.motto-command-tools, .motto-command-line):has(.motto-output-icon-dark.motto-output-icon-hippo) {
+  --motto-output-toggle-width: 32px;
+  --motto-output-toggle-extra-width: 8px;
+}
+
+:is(.motto-command-tools, .motto-output-tools) > button.motto-command-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 24px;
+  height: 24px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font: 11px/1.5 var(--font-interface);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.motto-command-button svg.svg-icon { display: block; width: 14px; height: 14px; }
+:is(.motto-command-tools, .motto-output-tools) > button.motto-command-button:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+:is(.motto-command-tools, .motto-output-tools) > button.motto-command-button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.motto-command-tools > button.motto-output-toggle {
+  --motto-output-color: var(--motto-output-light-color);
+  width: var(--motto-output-toggle-width, 24px);
+  padding: 2px;
+  color: var(--motto-output-color, var(--text-muted));
+}
+
+body.theme-dark .motto-output-toggle {
+  --motto-output-color: var(--motto-output-dark-color);
+}
+
+.motto-command-tools > button.motto-output-toggle:hover {
+  color: var(--motto-output-color, var(--text-normal));
+}
+
+.motto-output-icon { display: inline-flex; }
+.motto-output-icon-dark,
+body.theme-dark .motto-output-icon-light { display: none; }
+body.theme-dark .motto-output-icon-dark { display: inline-flex; }
+.motto-output-toggle svg.svg-icon { width: 18px; height: 18px; }
+
+.motto-output-hippo {
+  display: block;
+  width: 27px;
+  height: 18px;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+.motto-output-hippo-flipped { transform: scaleX(-1); }
+
+.motto-ansi-view,
+.motto-command-output-source {
+  --motto-output-darken: 0%;
+  --motto-output-background: color-mix(in srgb, var(--code-background), black var(--motto-output-darken));
+  background: var(--motto-output-background);
+}
+
+.motto-command-output,
+.motto-command-output-source { --motto-output-darken: 2%; }
+
+body.theme-dark .motto-command-output,
+body.theme-dark .motto-command-output-source { --motto-output-darken: 5%; }
+
+.motto-ansi-view {
+  --motto-ansi-black: var(--color-base-100);
+  --motto-ansi-red: var(--color-red);
+  --motto-ansi-green: var(--color-green);
+  --motto-ansi-yellow: var(--color-yellow);
+  --motto-ansi-blue: var(--color-blue);
+  --motto-ansi-magenta: var(--color-purple);
+  --motto-ansi-cyan: var(--color-cyan);
+  --motto-ansi-white: var(--color-base-00);
+  --motto-ansi-bright-tone: black;
+  --motto-ansi-bright-black: color-mix(in srgb, var(--motto-ansi-black), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-red: color-mix(in srgb, var(--motto-ansi-red), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-green: color-mix(in srgb, var(--motto-ansi-green), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-yellow: color-mix(in srgb, var(--motto-ansi-yellow), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-blue: color-mix(in srgb, var(--motto-ansi-blue), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-magenta: color-mix(in srgb, var(--motto-ansi-magenta), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-cyan: color-mix(in srgb, var(--motto-ansi-cyan), var(--motto-ansi-bright-tone) 20%);
+  --motto-ansi-bright-white: color-mix(in srgb, var(--motto-ansi-white), var(--motto-ansi-bright-tone) 20%);
+  position: relative;
+  padding: 12px 43px;
+  margin-block-end: 1em;
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: var(--code-size, 13px);
+  line-height: var(--line-height-normal, 1.5);
+}
+
+.motto-command-output {
+  border-top: 1px solid var(--background-modifier-border);
+  border-radius: 0 0 var(--code-radius, 6px) var(--code-radius, 6px);
+}
+
+.motto-command-output-partial:not([hidden]) {
+  display: grid;
+  grid-template-columns: 43px minmax(0, 1fr) 43px;
+  padding: 12px 0 0;
+}
+
+.markdown-source-view.mod-cm6 .cm-content > .motto-command-output-partial:not([hidden]) {
+  display: grid;
+}
+
+.motto-command-output-partial > pre { grid-column: 2; }
+.motto-command-output-partial > .motto-expand-footer { grid-column: 1 / -1; margin-block-start: 12px; }
+.motto-command-output pre.motto-partial-codeblock::after {
+  background: linear-gradient(to bottom, transparent, var(--motto-output-background));
+}
+
+.motto-ansi-standalone {
+  padding: var(--size-4-4, 16px) 43px var(--size-4-4, 16px) var(--size-4-4, 16px);
+  border-radius: var(--code-radius, 6px);
+  margin-block-start: 1em;
+}
+
+.motto-header + .motto-ansi-standalone {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  margin-block-start: 0;
+}
+
+.motto-ansi-partial {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+  margin-block-end: 0;
+}
+
+body.theme-dark .motto-ansi-view { --motto-ansi-bright-tone: white; }
+
+.motto-output-tools { position: absolute; z-index: 2; top: 8px; right: 12px; display: flex; gap: 8px; }
+.markdown-rendered .motto-command-output > .motto-output-tools { right: 15px; }
+.markdown-source-view .motto-command-output > .motto-output-tools { right: 8px; }
+.motto-ansi-view:has(.motto-output-tools > button:nth-child(2)) > pre { padding-block-start: 26px; }
+
+.motto-command-partial::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: min(3lh, 100%);
+  background: linear-gradient(to bottom, transparent, var(--code-background));
+  pointer-events: none;
+}
+
+.markdown-source-view.mod-cm6 .cm-content > div.cm-line.motto-command-line {
+  position: relative;
+  min-height: 28px;
+  padding-inline-start: calc(var(--size-4-4, 16px) + 28px);
+  padding-inline-end: calc(var(--motto-command-tools-width, 36px) + var(--motto-output-toggle-extra-width, 0px));
+}
+
+.motto-command-marker { display: inline-block; width: 0; height: 0; user-select: none; }
+.motto-command-marker > .motto-command-prompt { position: absolute; top: 0; inset-inline-start: var(--size-4-4, 16px); width: 16px; }
+.motto-command-marker > .motto-command-tools { position: absolute; top: 0; inset-inline-end: 8px; z-index: 2; }
+
+.markdown-source-view.mod-cm6 .cm-content > .motto-command-empty-tools {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 15px;
+  background: var(--code-background);
+}
+
+@media (max-width: 560px) {
+  .motto-command-header { flex-wrap: wrap; }
+  .motto-command-header > .motto-header-title { flex: 1; }
+  .motto-command-context { order: 1; flex: 0 0 100%; padding: 4px 15px 8px; }
+  .motto-command-row { grid-template-columns: 16px minmax(0, 1fr); gap: 8px 12px; }
+  .motto-command-row > .motto-command-tools { grid-column: 2; justify-self: end; }
+}
