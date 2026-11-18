@@ -38,10 +38,10 @@ export class MottoSettingsTab extends PluginSettingTab {
 
     const general = this.section(this.containerEl, 'General', 2);
     const languages = this.section(general, 'Language eligibility', 3);
-    this.addLanguageList(languages, 'languageWhitelist', 'Language whitelist',
+    this.addLanguageList(languages, 'languageIncludeList', 'Language include list',
       'Enhance only these fence names. Separate with commas, spaces or new lines; case-insensitive, exact names only. Aliases are separate entries. Use plaintext for unlabelled blocks. Empty disables all enhancements.');
-    this.addLanguageList(languages, 'languageBlacklist', 'Language blacklist',
-      'Never enhance these fence names, even when whitelisted. Same format as the whitelist. Mermaid is excluded by default to preserve native rendering.');
+    this.addLanguageList(languages, 'languageExcludeList', 'Language exclude list',
+      'Never enhance these fence names, even when present in the include list. Same format as the include list. Mermaid is excluded by default to preserve native rendering.');
 
     const blocks = this.section(this.containerEl, 'Code blocks', 2);
     const header = this.section(blocks, 'Header', 3);
@@ -224,13 +224,13 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private addLanguageList(
-    parent: HTMLElement, key: 'languageWhitelist' | 'languageBlacklist' | 'outputLanguages',
+    parent: HTMLElement, key: 'languageIncludeList' | 'languageExcludeList' | 'outputLanguages',
     name: string, description: string, disabled: () => boolean = () => false,
   ): void {
     const setting = this.createSetting(parent, name, disabled).setDesc(description);
     const defaults = new Set(DEFAULT_SETTINGS[key]);
     setting.addTextArea((text) => {
-      text.inputEl.rows = key === 'languageWhitelist' ? 6 : 3;
+      text.inputEl.rows = key === 'languageIncludeList' ? 6 : 3;
       text.inputEl.cols = 36;
       text.inputEl.setAttribute('aria-label', name);
       text.setValue(this.motto.settings[key].join('\n'));

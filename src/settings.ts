@@ -35,8 +35,8 @@ export interface HeaderStyleSettings {
 }
 
 export interface MottoSettings {
-  languageWhitelist: string[];
-  languageBlacklist: string[];
+  languageIncludeList: string[];
+  languageExcludeList: string[];
   headerDisplay: HeaderDisplayMode;
   commandBlocks: boolean;
   outputLanguages: string[];
@@ -65,11 +65,11 @@ const DEFAULT_HEADER_STYLE: Readonly<HeaderStyleSettings> = {
 };
 
 export const DEFAULT_SETTINGS: Readonly<MottoSettings> = {
-  languageWhitelist: normalizeLanguageList([
+  languageIncludeList: normalizeLanguageList([
     ...Object.entries(languages).flatMap(([id, definition]) => [id, ...definition.aliases]),
     ...SHELL_LANGUAGES, 'ansi',
   ].join('\n')).sort(),
-  languageBlacklist: ['mermaid'],
+  languageExcludeList: ['mermaid'],
   headerDisplay: 'default',
   commandBlocks: true,
   outputLanguages: ['ansi'],
@@ -97,10 +97,10 @@ export function normalizeLanguageList(value: string): string[] {
 
 export function isLanguageEnabled(
   language: string,
-  settings: Pick<MottoSettings, 'languageWhitelist' | 'languageBlacklist'>,
+  settings: Pick<MottoSettings, 'languageIncludeList' | 'languageExcludeList'>,
 ): boolean {
   const name = language.trim().toLowerCase() || 'plaintext';
-  return settings.languageWhitelist.includes(name) && !settings.languageBlacklist.includes(name);
+  return settings.languageIncludeList.includes(name) && !settings.languageExcludeList.includes(name);
 }
 
 export function isChoice<T extends string>(value: unknown, choices: readonly T[]): value is T {
@@ -189,8 +189,8 @@ function parseHeaderStyle(data: unknown, mode: ColorMode): HeaderStyleSettings {
 export function parseSettings(data: unknown): MottoSettings {
   const settings: MottoSettings = {
     ...DEFAULT_SETTINGS,
-    languageWhitelist: [...DEFAULT_SETTINGS.languageWhitelist],
-    languageBlacklist: [...DEFAULT_SETTINGS.languageBlacklist],
+    languageIncludeList: [...DEFAULT_SETTINGS.languageIncludeList],
+    languageExcludeList: [...DEFAULT_SETTINGS.languageExcludeList],
     outputLanguages: [...DEFAULT_SETTINGS.outputLanguages],
     headerStyles: {
       light: { ...DEFAULT_SETTINGS.headerStyles.light },
@@ -206,12 +206,17 @@ export function parseSettings(data: unknown): MottoSettings {
     console.warn('[Motto Code Block] Invalid saved settings; using defaults.');
     return settings;
   }
-  for (const key of ['languageWhitelist', 'languageBlacklist', 'outputLanguages'] as const) {
-    if (!(key in data)) continue;
-    const value: unknown = data[key];
+  for (const [key, legacyKey] of [
+    ['languageIncludeList', 'languageWhitelist'],
+    ['languageExcludeList', 'languageBlacklist'],
+    ['outputLanguages', 'outputLanguages'],
+  ] as const) {
+    const savedKey: string = key in data ? key : legacyKey;
+    if (!(savedKey in data)) continue;
+    const value: unknown = data[savedKey];
     if (Array.isArray(value) && value.every((entry): entry is string => typeof entry === 'string')) {
       settings[key] = normalizeLanguageList(value.join('\n'));
-    } else console.warn(`[Motto Code Block] Invalid setting "${key}"; using its default.`);
+    } else console.warn(`[Motto Code Block] Invalid setting "${savedKey}"; using its default.`);
   }
   for (const key of ['commandBlocks', 'tapMyHippo', 'showIcon', 'showLanguage', 'showHeaderCopyButton'] as const) {
     if (!(key in data)) continue;

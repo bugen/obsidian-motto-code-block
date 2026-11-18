@@ -183,7 +183,7 @@ describe('reading mode headers', () => {
 
   it.each(['js', 'ansi', 'bash', 'my-language', ''])(
     'honors exclude on %j blocks and restores native rendering when the flag is added', async (language) => {
-      const settings = parseSettings({ languageWhitelist: [language || 'plaintext'] });
+      const settings = parseSettings({ languageIncludeList: [language || 'plaintext'] });
       const source = `\`\`\`${language} title:Test cmd expand:1\nfirst\nsecond\n\`\`\``;
       const excluded = source.replace('expand:1', 'expand:1 exclude');
       const { renderer, context, updateSource } = fixture(excluded, settings);
@@ -287,7 +287,7 @@ describe('reading mode headers', () => {
   it.each(['js', 'ansi', 'bash', 'my-language', ''])(
     'leaves excluded %j blocks untouched and applies language changes to mounted blocks', async (language) => {
       const name = language || 'plaintext';
-      const settings = parseSettings({ languageWhitelist: [] });
+      const settings = parseSettings({ languageIncludeList: [] });
       const { renderer, context, updateSettings } = fixture(
         `\`\`\`${language} title:Test expand:1${language === 'bash' ? ' user:root' : ''}\nfirst\nsecond\n\`\`\``,
         settings,
@@ -297,16 +297,16 @@ describe('reading mode headers', () => {
       const before = native.section.innerHTML;
       await renderer.process(native.section, context);
       expect(native.section.innerHTML).toBe(before);
-      updateSettings({ ...settings, languageWhitelist: [name] });
+      updateSettings({ ...settings, languageIncludeList: [name] });
       expect(native.section.querySelector('.motto-header')).not.toBeNull();
       expect(native.section.querySelector('.motto-expand-button')).not.toBeNull();
-      updateSettings({ ...settings, languageWhitelist: [name], languageBlacklist: [name] });
+      updateSettings({ ...settings, languageIncludeList: [name], languageExcludeList: [name] });
       expect(native.section.querySelector('[class*="motto-"]')).toBeNull();
       expect(native.pre.hidden).toBe(false);
       expect(native.pre.classList.contains('foreign-codeblock')).toBe(true);
       expect(native.code.firstChild).toBe(native.token);
       expect(native.pre.querySelector('.copy-code-button')).toBe(native.copy);
-      updateSettings({ ...settings, languageWhitelist: [name] });
+      updateSettings({ ...settings, languageIncludeList: [name] });
       expect(native.section.querySelector('.motto-header')).not.toBeNull();
       expect(native.section.querySelector('.motto-expand-button')).not.toBeNull();
       expect(native.code.textContent).toBe('first\nsecond\n');
@@ -316,7 +316,7 @@ describe('reading mode headers', () => {
   it.each([
     ['sh', ''], ['sh', ' user:root'], ['ansi', ''], ['ansi', ' user:root'],
   ])('rebuilds output pairing when excluding %s with metadata %j', async (excluded, metadata) => {
-    const settings = parseSettings({ languageBlacklist: [excluded] });
+    const settings = parseSettings({ languageExcludeList: [excluded] });
     const { renderer, context, updateSettings } = fixture(
       `\`\`\`sh title:Command${metadata}\npwd\nwhoami\n\`\`\`\n\`\`\`ansi\n/srv\nroot\n\`\`\``, settings,
     );

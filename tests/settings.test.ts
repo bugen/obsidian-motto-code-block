@@ -46,24 +46,51 @@ describe('saved settings', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"tapMyHippo"'));
   });
 
-  it('normalizes and round-trips language lists with blacklist precedence and exact alias matching', () => {
+  it('normalizes and round-trips language lists with exclusion precedence and exact alias matching', () => {
     const settings = parseSettings({
-      languageWhitelist: [' JS ', 'javascript', 'PY', 'js', ' plaintext '],
-      languageBlacklist: [' js ', 'PLAINTEXT', 'js'],
+      languageIncludeList: [' JS ', 'javascript', 'PY', 'js', ' plaintext '],
+      languageExcludeList: [' js ', 'PLAINTEXT', 'js'],
     });
-    expect(settings.languageWhitelist).toEqual(['js', 'javascript', 'py', 'plaintext']);
-    expect(settings.languageBlacklist).toEqual(['js', 'plaintext']);
+    expect(settings.languageIncludeList).toEqual(['js', 'javascript', 'py', 'plaintext']);
+    expect(settings.languageExcludeList).toEqual(['js', 'plaintext']);
     expect(isLanguageEnabled('JS', settings)).toBe(false);
     expect(isLanguageEnabled('JavaScript', settings)).toBe(true);
     expect(isLanguageEnabled('py', settings)).toBe(true);
     expect(isLanguageEnabled('python', settings)).toBe(false);
     expect(isLanguageEnabled('', settings)).toBe(false);
-    settings.languageBlacklist = [];
+    settings.languageExcludeList = [];
     expect(isLanguageEnabled('', settings)).toBe(true);
-    settings.languageWhitelist = [];
+    settings.languageIncludeList = [];
     expect(isLanguageEnabled('javascript', settings)).toBe(false);
     expect(isLanguageEnabled('', settings)).toBe(false);
     expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+  });
+
+  it.each([
+    { include: [' JS ', 'PY', 'js'], exclude: [' PY '], expectedInclude: ['js', 'py'], expectedExclude: ['py'] },
+    { include: [], exclude: [], expectedInclude: [], expectedExclude: [] },
+  ])('migrates legacy language lists without retaining their old saved keys (%#)', ({
+    include, exclude, expectedInclude, expectedExclude,
+  }) => {
+    const settings = parseSettings({ languageWhitelist: include, languageBlacklist: exclude });
+    expect(settings.languageIncludeList).toEqual(expectedInclude);
+    expect(settings.languageExcludeList).toEqual(expectedExclude);
+    const saved = JSON.parse(JSON.stringify(settings));
+    expect(saved).not.toHaveProperty('languageWhitelist');
+    expect(saved).not.toHaveProperty('languageBlacklist');
+    expect(parseSettings(saved)).toEqual(settings);
+  });
+
+  it.each([
+    ['languageIncludeList', 'languageWhitelist'],
+    ['languageExcludeList', 'languageBlacklist'],
+  ] as const)('prefers %s over its legacy key, including empty and invalid values', (key, legacyKey) => {
+    for (const value of [[], ['js']]) {
+      expect(parseSettings({ [legacyKey]: ['py'], [key]: value })[key]).toEqual(value);
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSettings({ [legacyKey]: ['py'], [key]: null })[key]).toEqual(DEFAULT_SETTINGS[key]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`"${key}"`));
   });
 
   it('enables ordinary CC language names and supported command languages by default, not plugin renderers', () => {
@@ -74,18 +101,21 @@ describe('saved settings', () => {
     for (const language of ['mermaid', 'dataview', 'dataviewjs', 'ad-note', 'unknown-plugin']) {
       expect(isLanguageEnabled(language, settings), language).toBe(false);
     }
-    settings.languageWhitelist.length = 0;
-    settings.languageBlacklist.length = 0;
+    settings.languageIncludeList.length = 0;
+    settings.languageExcludeList.length = 0;
     expect(isLanguageEnabled('python', parseSettings(null))).toBe(true);
     expect(isLanguageEnabled('mermaid', parseSettings(null))).toBe(false);
   });
 
-  it('reports invalid saved language lists and preserves their defaults', () => {
+  it.each([
+    ['languageIncludeList', 'languageExcludeList'],
+    ['languageWhitelist', 'languageBlacklist'],
+  ] as const)('reports invalid saved %s and %s lists and preserves their defaults', (includeKey, excludeKey) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     for (const value of ['js,py', null, ['js', 1]]) {
-      expect(parseSettings({ languageWhitelist: value, languageBlacklist: value })).toEqual(DEFAULT_SETTINGS);
+      expect(parseSettings({ [includeKey]: value, [excludeKey]: value })).toEqual(DEFAULT_SETTINGS);
     }
-    for (const key of ['languageWhitelist', 'languageBlacklist']) {
+    for (const key of [includeKey, excludeKey]) {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining(`"${key}"`));
     }
   });

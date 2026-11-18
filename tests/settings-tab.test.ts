@@ -77,7 +77,7 @@ describe('settings tab', () => {
     const sections = [...tab.containerEl.querySelectorAll<HTMLElement>('.motto-settings-level-2')];
     expect(sections.map((section) => section.querySelector('[role="heading"]')?.textContent))
       .toEqual(['General', 'Code blocks', 'Command blocks']);
-    expect(sections[0]?.contains(row('Language whitelist'))).toBe(true);
+    expect(sections[0]?.contains(row('Language include list'))).toBe(true);
     for (const name of ['Header display', 'Icon size', 'Header background', 'Bold title', 'Line numbers']) {
       expect(sections[1]?.contains(row(name))).toBe(true);
     }
@@ -126,15 +126,15 @@ describe('settings tab', () => {
 
   it('compares language lists by normalized membership rather than formatting or order', async () => {
     const { change, save, reset, modified } = fixture();
-    change('Language whitelist', [...DEFAULT_SETTINGS.languageWhitelist].reverse().join(', ').toUpperCase());
-    change('Language blacklist', 'MERMAID,\nmermaid');
+    change('Language include list', [...DEFAULT_SETTINGS.languageIncludeList].reverse().join(', ').toUpperCase());
+    change('Language exclude list', 'MERMAID,\nmermaid');
     await vi.waitFor(() => { expect(save).toHaveBeenCalledTimes(2); });
-    expect(modified('Language whitelist')).toBe(false);
-    expect(modified('Language blacklist')).toBe(false);
-    change('Language blacklist', 'json');
-    await vi.waitFor(() => { expect(modified('Language blacklist')).toBe(true); });
-    reset('Language blacklist');
-    await vi.waitFor(() => { expect(modified('Language blacklist')).toBe(false); });
+    expect(modified('Language include list')).toBe(false);
+    expect(modified('Language exclude list')).toBe(false);
+    change('Language exclude list', 'json');
+    await vi.waitFor(() => { expect(modified('Language exclude list')).toBe(true); });
+    reset('Language exclude list');
+    await vi.waitFor(() => { expect(modified('Language exclude list')).toBe(false); });
   });
 
   it('keeps theme-specific reset highlights separate while retaining common highlights', async () => {
@@ -215,7 +215,7 @@ describe('settings tab', () => {
 
   it('updates only the affected theme controls while retaining common inputs, focus and scroll', async () => {
     const { tab, row, change, reset } = fixture();
-    const common = row('Language whitelist').querySelector('textarea')!;
+    const common = row('Language include list').querySelector('textarea')!;
     const selector = row('Editing theme');
     const dark = selector.querySelector<HTMLButtonElement>('[data-motto-theme="dark"]')!;
     common.value = 'uncommitted input';
@@ -223,7 +223,7 @@ describe('settings tab', () => {
     tab.containerEl.scrollTop = 90;
     change('Editing theme', 'dark');
     await vi.waitFor(() => { expect(dark.getAttribute('aria-pressed')).toBe('true'); });
-    expect(row('Language whitelist').querySelector('textarea')).toBe(common);
+    expect(row('Language include list').querySelector('textarea')).toBe(common);
     expect(common.value).toBe('uncommitted input');
     expect(row('Editing theme')).toBe(selector);
     expect(document.activeElement).toBe(dark);
@@ -234,7 +234,7 @@ describe('settings tab', () => {
     await vi.waitFor(() => { expect(row('Custom background color')).toBeDefined(); });
     expect(document.activeElement).toBe(row('Header background').querySelector('select'));
     expect(row('Title font size')).toBe(title);
-    expect(row('Language whitelist').querySelector('textarea')).toBe(common);
+    expect(row('Language include list').querySelector('textarea')).toBe(common);
     const background = row('Header background');
     change('Override output toggle color', true);
     await vi.waitFor(() => { expect(row('Output toggle color')).toBeDefined(); });
@@ -374,26 +374,26 @@ describe('settings tab', () => {
 
   it('saves normalized language lists and resets each independently', async () => {
     const { plugin, saved, row, change, reset } = fixture();
-    change('Language whitelist', ' JS, javascript\nPy js\tplaintext ');
-    change('Language blacklist', ' JS,\nPLAINTEXT,js ');
+    change('Language include list', ' JS, javascript\nPy js\tplaintext ');
+    change('Language exclude list', ' JS,\nPLAINTEXT,js ');
     await vi.waitFor(() => {
-      expect(saved[saved.length - 1]?.languageWhitelist).toEqual(['js', 'javascript', 'py', 'plaintext']);
-      expect(saved[saved.length - 1]?.languageBlacklist).toEqual(['js', 'plaintext']);
+      expect(saved[saved.length - 1]?.languageIncludeList).toEqual(['js', 'javascript', 'py', 'plaintext']);
+      expect(saved[saved.length - 1]?.languageExcludeList).toEqual(['js', 'plaintext']);
     });
-    reset('Language whitelist');
+    reset('Language include list');
     await vi.waitFor(() => {
-      expect(plugin.settings.languageWhitelist).toEqual(DEFAULT_SETTINGS.languageWhitelist);
-      expect(plugin.settings.languageBlacklist).toEqual(['js', 'plaintext']);
-      expect(row('Language whitelist').querySelector('textarea')?.value)
-        .toBe(DEFAULT_SETTINGS.languageWhitelist.join('\n'));
+      expect(plugin.settings.languageIncludeList).toEqual(DEFAULT_SETTINGS.languageIncludeList);
+      expect(plugin.settings.languageExcludeList).toEqual(['js', 'plaintext']);
+      expect(row('Language include list').querySelector('textarea')?.value)
+        .toBe(DEFAULT_SETTINGS.languageIncludeList.join('\n'));
     });
-    change('Language whitelist', '');
-    await vi.waitFor(() => { expect(plugin.settings.languageWhitelist).toEqual([]); });
-    reset('Language blacklist');
+    change('Language include list', '');
+    await vi.waitFor(() => { expect(plugin.settings.languageIncludeList).toEqual([]); });
+    reset('Language exclude list');
     await vi.waitFor(() => {
-      expect(saved[saved.length - 1]).toEqual({ ...DEFAULT_SETTINGS, languageWhitelist: [] });
-      expect(row('Language blacklist').querySelector('textarea')?.value)
-        .toBe(DEFAULT_SETTINGS.languageBlacklist.join('\n'));
+      expect(saved[saved.length - 1]).toEqual({ ...DEFAULT_SETTINGS, languageIncludeList: [] });
+      expect(row('Language exclude list').querySelector('textarea')?.value)
+        .toBe(DEFAULT_SETTINGS.languageExcludeList.join('\n'));
     });
   });
 

@@ -149,7 +149,7 @@ describe('live preview headers', () => {
 
   it.each(['js', 'ansi', 'bash', 'my-language', ''])(
     'honors exclude on %j blocks across edits, refresh and selection changes', (language) => {
-      const settings = parseSettings({ languageWhitelist: [language || 'plaintext'] });
+      const settings = parseSettings({ languageIncludeList: [language || 'plaintext'] });
       const doc = `Intro\n\n\`\`\`${language} title:Test cmd expand:1 exclude\nfirst\nsecond\n\`\`\``;
       const { view, headers } = fixture(true, doc, settings);
       expect(view.dom.querySelector('[class*="motto-"]')).toBeNull();
@@ -224,13 +224,13 @@ describe('live preview headers', () => {
     'leaves excluded %j source and selection behavior alone and refreshes eligibility', (language) => {
       const name = language || 'plaintext';
       const doc = `Intro\n\n\`\`\`${language} title:Test expand:1${language === 'bash' ? ' user:root' : ''}\nfirst\nsecond\n\`\`\`\n\nAfter`;
-      const settings = parseSettings({ languageWhitelist: [] });
+      const settings = parseSettings({ languageIncludeList: [] });
       const { view, updateSettings } = fixture(true, doc, settings);
       expect(view.dom.querySelector('[class*="motto-"]')).toBeNull();
-      updateSettings({ ...settings, languageWhitelist: [name] });
+      updateSettings({ ...settings, languageIncludeList: [name] });
       expect(view.dom.querySelector('.motto-header')).not.toBeNull();
       expect(view.dom.querySelector('.motto-expand-button')).not.toBeNull();
-      updateSettings({ ...settings, languageWhitelist: [name], languageBlacklist: [name] });
+      updateSettings({ ...settings, languageIncludeList: [name], languageExcludeList: [name] });
       expect(view.dom.querySelector('[class*="motto-"]')).toBeNull();
       expect(view.contentDOM.textContent).toContain('second');
       const from = doc.indexOf('first');
@@ -238,7 +238,7 @@ describe('live preview headers', () => {
       expect(runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true }), 'editor')).toBe(false);
       expect(view.state.selection.main.empty).toBe(true);
       view.dispatch({ selection: { anchor: 0 } });
-      updateSettings({ ...settings, languageWhitelist: [name] });
+      updateSettings({ ...settings, languageIncludeList: [name] });
       expect(view.dom.querySelector('.motto-header')).not.toBeNull();
       expect(view.dom.querySelector('.motto-expand-button')).not.toBeNull();
       view.dispatch({ effects: setLivePreview.of(false) });
@@ -251,7 +251,7 @@ describe('live preview headers', () => {
     ['sh', ''], ['sh', ' user:root'], ['ansi', ''], ['ansi', ' user:root'],
   ])('rebuilds output pairing when excluding %s with metadata %j', (excluded, metadata) => {
     const doc = `Intro\n\n\`\`\`sh title:Command${metadata}\npwd\nwhoami\n\`\`\`\n\`\`\`ansi\n/srv\nroot\n\`\`\``;
-    const settings = parseSettings({ languageBlacklist: [excluded] });
+    const settings = parseSettings({ languageExcludeList: [excluded] });
     const { view, updateSettings } = fixture(true, doc, settings);
     const checkExcluded = () => {
       expect(view.dom.querySelector('.motto-output-toggle, .motto-command-output')).toBeNull();

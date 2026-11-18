@@ -21,8 +21,8 @@ describe('command blocks', () => {
     ]) expect(parse(text).blocks[1]?.commandFrom).toBeUndefined();
     for (const configuration of [
       { ...settings, outputLanguages: [] },
-      { ...settings, languageBlacklist: [language] },
-      { ...settings, languageWhitelist: ['sh'] },
+      { ...settings, languageExcludeList: [language] },
+      { ...settings, languageIncludeList: ['sh'] },
     ]) expect(parse(source, configuration).blocks[0]?.terminal).toBeUndefined();
   });
 
@@ -99,7 +99,7 @@ describe('command blocks', () => {
   });
 
   it.each(['sh', 'ansi'])('does not pair excluded %s fences or diagnose their parameters', (excluded) => {
-    const settings = parseSettings({ languageBlacklist: [excluded] });
+    const settings = parseSettings({ languageExcludeList: [excluded] });
     const source = '```sh title:Command\npwd\n```\n```ansi expand:0\nout\n```';
     const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings));
     expect(result.blocks).toHaveLength(2);
