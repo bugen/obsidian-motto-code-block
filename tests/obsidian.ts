@@ -37,6 +37,10 @@ export function setIcon(element: HTMLElement, icon: string): void {
   element.replaceChildren(svg);
 }
 
+export function setTooltip(element: HTMLElement, tooltip: string): void {
+  element.setAttribute('aria-label', tooltip);
+}
+
 export async function loadPrism(): Promise<{ highlightElement(element: HTMLElement): void }> {
   return {
     highlightElement(element) {
@@ -63,6 +67,8 @@ export class Notice {
 
 export class PluginSettingTab {
   readonly containerEl: HTMLElement;
+  // Obsidian's undocumented reference to its settings modal can shadow subclass methods.
+  readonly setting = {};
 
   constructor() {
     this.containerEl = document.createElement('div');
@@ -141,21 +147,37 @@ class DropdownControl {
 }
 
 class ExtraButtonControl {
-  private readonly buttonEl: HTMLButtonElement;
+  readonly extraSettingsEl: HTMLButtonElement;
+
+  constructor(parent: HTMLElement) {
+    this.extraSettingsEl = document.createElement('button');
+    this.extraSettingsEl.type = 'button';
+    this.extraSettingsEl.className = 'clickable-icon extra-setting-button';
+    parent.append(this.extraSettingsEl);
+  }
+
+  setIcon(icon: string): this { setIcon(this.extraSettingsEl, icon); return this; }
+  setTooltip(tooltip: string): this {
+    this.extraSettingsEl.title = tooltip;
+    this.extraSettingsEl.setAttribute('aria-label', tooltip);
+    return this;
+  }
+  onClick(callback: () => unknown): this {
+    this.extraSettingsEl.addEventListener('click', () => { void callback(); });
+    return this;
+  }
+}
+
+class ButtonControl {
+  readonly buttonEl: HTMLButtonElement;
 
   constructor(parent: HTMLElement) {
     this.buttonEl = document.createElement('button');
     this.buttonEl.type = 'button';
-    this.buttonEl.className = 'clickable-icon extra-setting-button';
     parent.append(this.buttonEl);
   }
 
-  setIcon(icon: string): this { setIcon(this.buttonEl, icon); return this; }
-  setTooltip(tooltip: string): this {
-    this.buttonEl.title = tooltip;
-    this.buttonEl.setAttribute('aria-label', tooltip);
-    return this;
-  }
+  setButtonText(text: string): this { this.buttonEl.textContent = text; return this; }
   onClick(callback: () => unknown): this {
     this.buttonEl.addEventListener('click', () => { void callback(); });
     return this;
@@ -163,52 +185,63 @@ class ExtraButtonControl {
 }
 
 export class Setting {
-  private readonly row: HTMLElement;
-  private readonly name: HTMLElement;
-  private readonly description: HTMLElement;
-  private readonly controls: HTMLElement;
+  readonly settingEl: HTMLElement;
+  readonly nameEl: HTMLElement;
+  readonly descEl: HTMLElement;
+  readonly controlEl: HTMLElement;
 
   constructor(parent: HTMLElement) {
-    this.row = document.createElement('div');
-    this.row.className = 'setting-item';
+    this.settingEl = document.createElement('div');
+    this.settingEl.className = 'setting-item';
     const info = document.createElement('div');
     info.className = 'setting-item-info';
-    this.name = document.createElement('div');
-    this.name.className = 'setting-item-name';
-    this.description = document.createElement('div');
-    this.description.className = 'setting-item-description';
-    info.append(this.name, this.description);
-    this.controls = document.createElement('div');
-    this.controls.className = 'setting-item-control';
-    this.row.append(info, this.controls);
-    parent.append(this.row);
+    this.nameEl = document.createElement('div');
+    this.nameEl.className = 'setting-item-name';
+    this.descEl = document.createElement('div');
+    this.descEl.className = 'setting-item-description';
+    info.append(this.nameEl, this.descEl);
+    this.controlEl = document.createElement('div');
+    this.controlEl.className = 'setting-item-control';
+    this.settingEl.append(info, this.controlEl);
+    parent.append(this.settingEl);
   }
 
-  setName(name: string): this { this.name.textContent = name; return this; }
-  setDesc(description: string): this { this.description.textContent = description; return this; }
-  setHeading(): this { this.row.classList.add('setting-item-heading'); return this; }
+  setName(name: string): this { this.nameEl.textContent = name; return this; }
+  setDesc(description: string | DocumentFragment): this { this.descEl.replaceChildren(description); return this; }
+  setHeading(): this { this.settingEl.classList.add('setting-item-heading'); return this; }
+  setDisabled(disabled: boolean): this {
+    this.settingEl.classList.toggle('is-disabled', disabled);
+    for (const control of this.controlEl.querySelectorAll<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+    >('input, select, textarea, button')) control.disabled = disabled;
+    return this;
+  }
+  addButton(callback: (control: ButtonControl) => void): this {
+    callback(new ButtonControl(this.controlEl));
+    return this;
+  }
   addToggle(callback: (control: ToggleControl) => void): this {
-    callback(new ToggleControl(this.controls));
+    callback(new ToggleControl(this.controlEl));
     return this;
   }
   addDropdown(callback: (control: DropdownControl) => void): this {
-    callback(new DropdownControl(this.controls));
+    callback(new DropdownControl(this.controlEl));
     return this;
   }
   addText(callback: (control: TextControl) => void): this {
-    callback(new TextControl(this.controls));
+    callback(new TextControl(this.controlEl));
     return this;
   }
   addTextArea(callback: (control: TextAreaControl) => void): this {
-    callback(new TextAreaControl(this.controls));
+    callback(new TextAreaControl(this.controlEl));
     return this;
   }
   addColorPicker(callback: (control: TextControl) => void): this {
-    callback(new TextControl(this.controls, 'color'));
+    callback(new TextControl(this.controlEl, 'color'));
     return this;
   }
   addExtraButton(callback: (control: ExtraButtonControl) => void): this {
-    callback(new ExtraButtonControl(this.controls));
+    callback(new ExtraButtonControl(this.controlEl));
     return this;
   }
 }

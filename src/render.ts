@@ -77,8 +77,8 @@ export async function copyCode(document: Document, text: string): Promise<void> 
     await clipboard.writeText(text);
     new Notice('Copied to your clipboard');
   } catch (error) {
-    console.error('[Motto Codeblock] Failed to copy code block.', error);
-    new Notice('Motto Codeblock: Failed to copy code block.');
+    console.error('[Motto Code Block] Failed to copy code block.', error);
+    new Notice('Motto Code Block: Failed to copy code block.');
   }
 }
 

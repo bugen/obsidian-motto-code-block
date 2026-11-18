@@ -23,3 +23,6 @@ main.js.map
 dist/
 coverage/
 data.json
+
+# Temporarily ignored files
+AGENTS.md

@@ -364,11 +364,11 @@ describe('reading mode headers', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.querySelector('.motto-output-icon-light svg')?.getAttribute('data-icon')).toBe('monitor');
     expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo')).not.toBeNull();
-    expect(toggle.querySelector('.motto-output-hippo-flipped')).toBeNull();
+    expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo-flipped')).not.toBeNull();
     expect(toggle.style.getPropertyValue('--motto-output-light-color')).toBe('#123456');
     expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(false);
     toggle.click();
-    expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo-flipped')).not.toBeNull();
+    expect(toggle.querySelector('.motto-output-hippo-flipped')).toBeNull();
     expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(true);
     expect(shell.code.firstChild).toBe(shell.token);
     expect(shell.code.textContent).toBe(`${command}\n`);

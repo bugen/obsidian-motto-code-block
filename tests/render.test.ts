@@ -38,8 +38,8 @@ describe('header display', () => {
     vi.spyOn(obsidian, 'loadPrism').mockRejectedValueOnce(error);
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const output = commandOutput(document, '{"ok":true}', undefined, 'json');
-    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith('[Motto Codeblock] Failed to highlight output.', error); });
-    expect(Notice.messages).toContain('Motto Codeblock: Failed to highlight output.');
+    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith('[Motto Code Block] Failed to highlight output.', error); });
+    expect(Notice.messages).toContain('Motto Code Block: Failed to highlight output.');
     expect(output.querySelector('code')?.textContent).toBe('{"ok":true}');
   });
 
@@ -155,7 +155,7 @@ describe('header display', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it.each([false, true])('mirrors Hippo for the closing action with independent theme reversal (%s)', (reverseIcons) => {
+  it.each([false, true])('faces Hippo left to show output and right to hide it, respecting per-theme reversal (%s)', (reverseIcons) => {
     const styles = parseSettings({
       outputToggleStyles: {
         light: { icon: 'hippo', reverseIcons },
@@ -174,7 +174,7 @@ describe('header display', () => {
         setOutputToggle(button, open, styles);
         for (const mode of ['light', 'dark'] as const) {
           const icon = button.querySelector<HTMLElement>(`.motto-output-icon-${mode} .motto-output-hippo`)!;
-          const mirrored = open !== styles[mode].reverseIcons;
+          const mirrored = open === styles[mode].reverseIcons;
           expect(icon.style.maskImage).toMatch(/^url\(/);
           expect(getComputedStyle(icon).transform).toBe(mirrored ? 'scaleX(-1)' : '');
         }
@@ -519,8 +519,8 @@ describe('header display', () => {
       state: 'folded', toggle,
     })!;
     header.querySelector<HTMLButtonElement>('.motto-header-copy')!.click();
-    await vi.waitFor(() => expect(Notice.messages).toEqual(['Motto Codeblock: Failed to copy code block.']));
-    expect(log).toHaveBeenCalledWith('[Motto Codeblock] Failed to copy code block.', error);
+    await vi.waitFor(() => expect(Notice.messages).toEqual(['Motto Code Block: Failed to copy code block.']));
+    expect(log).toHaveBeenCalledWith('[Motto Code Block] Failed to copy code block.', error);
     expect(toggle).not.toHaveBeenCalled();
     expect(header.dataset.foldState).toBe('folded');
   });

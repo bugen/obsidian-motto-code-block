@@ -126,7 +126,7 @@ function isHexColor(value: unknown): value is string {
 function parseOutputToggleStyle(data: unknown, mode: ColorMode): OutputToggleStyleSettings {
   const style = { ...DEFAULT_SETTINGS.outputToggleStyles[mode] };
   if (!isRecord(data)) {
-    console.warn(`[Motto Codeblock] Invalid setting "outputToggleStyles.${mode}"; using defaults.`);
+    console.warn(`[Motto Code Block] Invalid setting "outputToggleStyles.${mode}"; using defaults.`);
     return style;
   }
   for (const key of Object.keys(style) as (keyof OutputToggleStyleSettings)[]) {
@@ -144,7 +144,7 @@ function parseOutputToggleStyle(data: unknown, mode: ColorMode): OutputToggleSty
         if (isHexColor(value)) { style[key] = value; continue; }
         break;
     }
-    console.warn(`[Motto Codeblock] Invalid setting "outputToggleStyles.${mode}.${key}"; using its default.`);
+    console.warn(`[Motto Code Block] Invalid setting "outputToggleStyles.${mode}.${key}"; using its default.`);
   }
   return style;
 }
@@ -152,7 +152,7 @@ function parseOutputToggleStyle(data: unknown, mode: ColorMode): OutputToggleSty
 function parseHeaderStyle(data: unknown, mode: ColorMode): HeaderStyleSettings {
   const style = { ...DEFAULT_SETTINGS.headerStyles[mode] };
   if (!isRecord(data)) {
-    console.warn(`[Motto Codeblock] Invalid setting "headerStyles.${mode}"; using defaults.`);
+    console.warn(`[Motto Code Block] Invalid setting "headerStyles.${mode}"; using defaults.`);
     return style;
   }
   for (const key of Object.keys(style) as (keyof HeaderStyleSettings)[]) {
@@ -181,7 +181,7 @@ function parseHeaderStyle(data: unknown, mode: ColorMode): HeaderStyleSettings {
         if (isHexColor(value)) { style[key] = value; continue; }
         break;
     }
-    console.warn(`[Motto Codeblock] Invalid setting "headerStyles.${mode}.${key}"; using its default.`);
+    console.warn(`[Motto Code Block] Invalid setting "headerStyles.${mode}.${key}"; using its default.`);
   }
   return style;
 }
@@ -203,7 +203,7 @@ export function parseSettings(data: unknown): MottoSettings {
   };
   if (data === null || data === undefined) return settings;
   if (!isRecord(data)) {
-    console.warn('[Motto Codeblock] Invalid saved settings; using defaults.');
+    console.warn('[Motto Code Block] Invalid saved settings; using defaults.');
     return settings;
   }
   for (const key of ['languageWhitelist', 'languageBlacklist', 'outputLanguages'] as const) {
@@ -211,43 +211,43 @@ export function parseSettings(data: unknown): MottoSettings {
     const value: unknown = data[key];
     if (Array.isArray(value) && value.every((entry): entry is string => typeof entry === 'string')) {
       settings[key] = normalizeLanguageList(value.join('\n'));
-    } else console.warn(`[Motto Codeblock] Invalid setting "${key}"; using its default.`);
+    } else console.warn(`[Motto Code Block] Invalid setting "${key}"; using its default.`);
   }
   for (const key of ['commandBlocks', 'tapMyHippo', 'showIcon', 'showLanguage', 'showHeaderCopyButton'] as const) {
     if (!(key in data)) continue;
     const value: unknown = Reflect.get(data, key);
     if (typeof value === 'boolean') settings[key] = value;
-    else console.warn(`[Motto Codeblock] Invalid setting "${key}"; using its default.`);
+    else console.warn(`[Motto Code Block] Invalid setting "${key}"; using its default.`);
   }
   if ('commandSpacing' in data) {
     if (isChoice(data.commandSpacing, COMMAND_SPACING_MODES)) settings.commandSpacing = data.commandSpacing;
-    else console.warn('[Motto Codeblock] Invalid setting "commandSpacing"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "commandSpacing"; using its default.');
   }
   if ('headerDisplay' in data) {
     if (isChoice(data.headerDisplay, HEADER_DISPLAY_MODES)) settings.headerDisplay = data.headerDisplay;
-    else console.warn('[Motto Codeblock] Invalid setting "headerDisplay"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "headerDisplay"; using its default.');
   } else if ('showHeader' in data) {
     if (typeof data.showHeader === 'boolean') settings.headerDisplay = data.showHeader ? 'default' : 'none';
-    else console.warn('[Motto Codeblock] Invalid setting "showHeader"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "showHeader"; using its default.');
   }
   if ('lineNumbers' in data) {
     if (isChoice(data.lineNumbers, LINE_NUMBER_MODES)) settings.lineNumbers = data.lineNumbers;
-    else console.warn('[Motto Codeblock] Invalid setting "lineNumbers"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "lineNumbers"; using its default.');
   } else if ('showLineNumbers' in data) {
     if (typeof data.showLineNumbers === 'boolean') settings.lineNumbers = data.showLineNumbers ? 'default' : 'none';
-    else console.warn('[Motto Codeblock] Invalid setting "showLineNumbers"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "showLineNumbers"; using its default.');
   }
   if ('defaultFoldState' in data) {
     if (isChoice(data.defaultFoldState, FOLD_STATES)) settings.defaultFoldState = data.defaultFoldState;
-    else console.warn('[Motto Codeblock] Invalid setting "defaultFoldState"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "defaultFoldState"; using its default.');
   }
   if ('partialFoldLines' in data) {
     if (isPositiveInteger(data.partialFoldLines)) settings.partialFoldLines = data.partialFoldLines;
-    else console.warn('[Motto Codeblock] Invalid setting "partialFoldLines"; using its default.');
+    else console.warn('[Motto Code Block] Invalid setting "partialFoldLines"; using its default.');
   }
   if ('headerStyles' in data) {
     if (!isRecord(data.headerStyles)) {
-      console.warn('[Motto Codeblock] Invalid setting "headerStyles"; using defaults.');
+      console.warn('[Motto Code Block] Invalid setting "headerStyles"; using defaults.');
     } else {
       for (const mode of COLOR_MODES) {
         if (mode in data.headerStyles) settings.headerStyles[mode] = parseHeaderStyle(data.headerStyles[mode], mode);
@@ -256,7 +256,7 @@ export function parseSettings(data: unknown): MottoSettings {
   }
   if ('outputToggleStyles' in data) {
     if (!isRecord(data.outputToggleStyles)) {
-      console.warn('[Motto Codeblock] Invalid setting "outputToggleStyles"; using defaults.');
+      console.warn('[Motto Code Block] Invalid setting "outputToggleStyles"; using defaults.');
     } else {
       for (const mode of COLOR_MODES) {
         if (mode in data.outputToggleStyles) {

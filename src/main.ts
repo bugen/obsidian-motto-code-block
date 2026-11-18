@@ -14,7 +14,7 @@ export default class MottoCodeblockPlugin extends Plugin {
     this.reading = new ReadingHeaders(async (path) => {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!(file instanceof TFile)) {
-        console.warn(`[Motto Codeblock] Cannot locate Markdown source: "${path}".`);
+        console.warn(`[Motto Code Block] Cannot locate Markdown source: "${path}".`);
         return undefined;
       }
       return this.app.vault.cachedRead(file);

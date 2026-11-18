@@ -68,7 +68,7 @@ class HeaderWidget extends WidgetType {
         view.dispatch({ effects: toggleFold.of(from), selection: { anchor: from } });
       },
     });
-    if (!header) throw new Error('[Motto Codeblock] Cannot mount a disabled header.');
+    if (!header) throw new Error('[Motto Code Block] Cannot mount a disabled header.');
     return header;
   }
 }

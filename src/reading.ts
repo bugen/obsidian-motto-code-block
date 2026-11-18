@@ -56,7 +56,7 @@ export class ReadingHeaders {
       const code = pre.querySelector<HTMLElement>(':scope > code')!;
       const section = context.getSectionInfo(code);
       if (!section) {
-        console.warn(`[Motto Codeblock] Source positions unavailable for a code block in "${context.sourcePath}".`);
+        console.warn(`[Motto Code Block] Source positions unavailable for a code block in "${context.sourcePath}".`);
         continue;
       }
       const text = (code.textContent ?? '').replaceAll('\r\n', '\n');

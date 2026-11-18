@@ -230,6 +230,6 @@ export function parseCodeBlocks(
 
 export function reportDiagnostics(diagnostics: Diagnostic[], path: string): void {
   for (const diagnostic of diagnostics) {
-    console.warn(`[Motto Codeblock] ${path}:${diagnostic.line + 1}: ${diagnostic.message}`);
+    console.warn(`[Motto Code Block] ${path}:${diagnostic.line + 1}: ${diagnostic.message}`);
   }
 }

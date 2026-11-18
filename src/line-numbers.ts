@@ -100,7 +100,7 @@ export class ReadingCodeLayout {
     if (this.code.getClientRects().length === 0) return;
     const document = this.pre.ownerDocument;
     const view = document.defaultView;
-    if (!view) throw new Error('[Motto Codeblock] Cannot measure code layout without a window.');
+    if (!view) throw new Error('[Motto Code Block] Cannot measure code layout without a window.');
     const style = view.getComputedStyle(this.code);
     const rects = codeLineRects(this.code, this.previewLines === undefined ? this.count : this.previewLines + 1);
     let previewHeight: string | undefined;

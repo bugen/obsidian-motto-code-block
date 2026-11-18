@@ -32,7 +32,7 @@ export class ReadingCommandView {
     const render = () => {
       const text = (code.textContent ?? '').replaceAll('\r\n', '\n');
       if (text !== block.text && text !== `${block.text}\n`) {
-        console.warn('[Motto Codeblock] Command content changed; waiting for Markdown reprocessing.');
+        console.warn('[Motto Code Block] Command content changed; waiting for Markdown reprocessing.');
         destroyHippoSpeech(view);
         view.hidden = true;
         pre.classList.remove('motto-command-native');

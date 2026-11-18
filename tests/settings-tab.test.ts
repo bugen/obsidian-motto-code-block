@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { App } from 'obsidian';
+import { App, Setting } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MottoCodeblockPlugin from '../src/main';
 import {
@@ -12,7 +12,7 @@ import { Notice } from './obsidian';
 function fixture() {
   const app = new App();
   const plugin = new MottoCodeblockPlugin(app, {
-    id: 'motto-codeblock', name: 'Motto Codeblock', version: '0.1.0',
+    id: 'motto-codeblock', name: 'Motto Code Block', version: '0.1.0',
     minAppVersion: '1.5.0', author: '', description: '',
   });
   const saved: MottoSettings[] = [];
@@ -24,11 +24,19 @@ function fixture() {
   tab.display();
   function row(name: string) {
     const element = [...tab.containerEl.querySelectorAll<HTMLElement>('.setting-item')]
-      .find((element) => element.querySelector('.setting-item-name')?.textContent === name);
+      .find((element) => element.querySelector('.setting-item-name')?.textContent === name &&
+        element.querySelector('input, select, textarea, button'));
     if (!element) throw new Error(`Missing setting: ${name}`);
     return element;
   }
   function change(name: string, value: string | boolean) {
+    if (name === 'Editing theme') {
+      const button = [...row(name).querySelectorAll<HTMLButtonElement>('[data-motto-theme]')]
+        .find((element) => element.dataset.mottoTheme === value);
+      if (!button) throw new Error(`Missing theme: ${value}`);
+      button.click();
+      return;
+    }
     const select = row(name).querySelector('select');
     const input = row(name).querySelector('input');
     const textarea = row(name).querySelector('textarea');
@@ -49,7 +57,10 @@ function fixture() {
     if (!button) throw new Error(`Missing reset button: ${name}`);
     button.click();
   }
-  return { plugin, tab, save, saved, row, change, reset };
+  function modified(name: string) {
+    return row(name).querySelector('[aria-label="Restore default"]')?.classList.contains('motto-reset-modified');
+  }
+  return { plugin, tab, save, saved, row, change, reset, modified };
 }
 
 afterEach(() => {
@@ -59,7 +70,256 @@ afterEach(() => {
   document.body.className = '';
 });
 
-describe('header appearance settings tab', () => {
+describe('settings tab', () => {
+  it('groups behavior and appearance by target beneath the theme selector', () => {
+    const { tab, row } = fixture();
+    expect(tab.containerEl.querySelector('.setting-item-name')?.textContent).toBe('Editing theme');
+    const sections = [...tab.containerEl.querySelectorAll<HTMLElement>('.motto-settings-level-2')];
+    expect(sections.map((section) => section.querySelector('[role="heading"]')?.textContent))
+      .toEqual(['General', 'Code blocks', 'Command blocks']);
+    expect(sections[0]?.contains(row('Language whitelist'))).toBe(true);
+    for (const name of ['Header display', 'Icon size', 'Header background', 'Bold title', 'Line numbers']) {
+      expect(sections[1]?.contains(row(name))).toBe(true);
+    }
+    for (const name of ['Command blocks', 'Output languages', 'Output toggle icon', 'Tap my hip-po!']) {
+      expect(sections[2]?.contains(row(name))).toBe(true);
+    }
+    expect(row('Show icon').nextElementSibling?.contains(row('Icon size'))).toBe(true);
+    expect(row('Show language label').nextElementSibling?.contains(row('Language label style'))).toBe(true);
+  });
+
+  it('renders the inline theme icon even when setDesc only supports text', () => {
+    vi.spyOn(Setting.prototype, 'setDesc').mockImplementation(function (this: Setting, description) {
+      this.descEl.textContent = String(description);
+      return this;
+    });
+    const { row } = fixture();
+    const description = row('Editing theme').querySelector('.setting-item-description')!;
+    const icon = description.querySelector('[role="img"]');
+    expect(icon?.getAttribute('aria-label')).toBeTruthy();
+    expect(icon?.querySelector('svg')?.isEqualNode(row('Icon size').querySelector('svg'))).toBe(true);
+    expect(description.textContent).not.toContain('the half-filled circle');
+    expect(description.textContent).not.toContain('[object DocumentFragment]');
+    expect(description.textContent).toContain('All other settings are shared.');
+  });
+
+  it('highlights changed common settings and clears the highlight when restored manually or reset', async () => {
+    const { tab, change, reset, modified } = fixture();
+    expect(tab.containerEl.querySelector('.motto-reset-modified')).toBeNull();
+    for (const [name, value, defaultValue] of [
+      ['Show header copy button', true, false],
+      ['Command spacing', 'large', 'middle'],
+      ['Partial preview lines', '3', '5'],
+      ['Output languages', 'text', 'ansi'],
+    ] as const) {
+      change(name, value);
+      await vi.waitFor(() => { expect(modified(name)).toBe(true); });
+      expect(modified('Line numbers')).toBe(false);
+      change(name, defaultValue);
+      await vi.waitFor(() => { expect(modified(name)).toBe(false); });
+      change(name, value);
+      await vi.waitFor(() => { expect(modified(name)).toBe(true); });
+      reset(name);
+      await vi.waitFor(() => { expect(modified(name)).toBe(false); });
+    }
+  });
+
+  it('compares language lists by normalized membership rather than formatting or order', async () => {
+    const { change, save, reset, modified } = fixture();
+    change('Language whitelist', [...DEFAULT_SETTINGS.languageWhitelist].reverse().join(', ').toUpperCase());
+    change('Language blacklist', 'MERMAID,\nmermaid');
+    await vi.waitFor(() => { expect(save).toHaveBeenCalledTimes(2); });
+    expect(modified('Language whitelist')).toBe(false);
+    expect(modified('Language blacklist')).toBe(false);
+    change('Language blacklist', 'json');
+    await vi.waitFor(() => { expect(modified('Language blacklist')).toBe(true); });
+    reset('Language blacklist');
+    await vi.waitFor(() => { expect(modified('Language blacklist')).toBe(false); });
+  });
+
+  it('keeps theme-specific reset highlights separate while retaining common highlights', async () => {
+    const { change, reset, modified, row } = fixture();
+    change('Show header copy button', true);
+    change('Icon size', 'large');
+    await vi.waitFor(() => { expect(modified('Icon size')).toBe(true); });
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => {
+      expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    });
+    expect(modified('Icon size')).toBe(false);
+    expect(modified('Show header copy button')).toBe(true);
+    change('Icon size', 'small');
+    await vi.waitFor(() => { expect(modified('Icon size')).toBe(true); });
+    reset('Icon size');
+    await vi.waitFor(() => { expect(modified('Icon size')).toBe(false); });
+    change('Editing theme', 'light');
+    await vi.waitFor(() => {
+      expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Light');
+    });
+    expect(modified('Icon size')).toBe(true);
+    reset('Icon size');
+    await vi.waitFor(() => { expect(modified('Icon size')).toBe(false); });
+    expect(modified('Show header copy button')).toBe(true);
+  });
+
+  it.each(COLOR_MODES)('selects the active %s theme on every opening but preserves manual choices during edits and resets', async (mode) => {
+    document.body.classList.toggle('theme-dark', mode === 'dark');
+    const { plugin, tab, row, change, reset, save } = fixture();
+    const selected = () => row('Editing theme').querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.dataset.mottoTheme;
+    const other = mode === 'light' ? 'dark' : 'light';
+    expect(selected()).toBe(mode);
+    change('Editing theme', other);
+    await vi.waitFor(() => { expect(selected()).toBe(other); });
+    expect(save).not.toHaveBeenCalled();
+    change('Header background', 'custom');
+    await vi.waitFor(() => {
+      expect(row('Custom background color')).toBeDefined();
+      expect(plugin.settings.headerStyles[other].background).toBe('custom');
+    });
+    expect(plugin.settings.headerStyles[mode].background).toBe('code');
+    expect(selected()).toBe(other);
+    expect(document.body.classList.contains('theme-dark')).toBe(mode === 'dark');
+    reset('Header background');
+    await vi.waitFor(() => { expect(row('Header background').querySelector('select')?.value).toBe('code'); });
+    expect(selected()).toBe(other);
+    tab.display();
+    expect(selected()).toBe(mode);
+    document.body.classList.toggle('theme-dark', other === 'dark');
+    tab.display();
+    expect(selected()).toBe(other);
+  });
+
+  it('marks only per-theme fields, including conditionally visible colors', async () => {
+    const { plugin, tab, row, change } = fixture();
+    plugin.settings = parseSettings({
+      headerStyles: { light: { background: 'custom', overrideTitleColor: true } },
+      outputToggleStyles: { light: { overrideColor: true } },
+    });
+    tab.display();
+    const marked = () => [...tab.containerEl.querySelectorAll('.setting-item-name .motto-theme-setting-icon')]
+      .map((marker) => marker.closest<HTMLElement>('[data-motto-setting]')?.dataset.mottoSetting);
+    expect(marked()).toEqual([
+      'Icon size', 'Language label style', 'Header background', 'Custom background color',
+      'Bold title', 'Italic title', 'Title font size', 'Override title color', 'Custom title color',
+      'Output toggle icon', 'Reverse output toggle icons', 'Override output toggle color', 'Output toggle color',
+    ]);
+    expect(row('Icon size').querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('Editing Light');
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => {
+      expect(row('Icon size').querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('Editing Dark');
+    });
+    expect(marked()).not.toContain('Custom background color');
+    expect(marked()).not.toContain('Custom title color');
+    expect(marked()).not.toContain('Output toggle color');
+  });
+
+  it('updates only the affected theme controls while retaining common inputs, focus and scroll', async () => {
+    const { tab, row, change, reset } = fixture();
+    const common = row('Language whitelist').querySelector('textarea')!;
+    const selector = row('Editing theme');
+    const dark = selector.querySelector<HTMLButtonElement>('[data-motto-theme="dark"]')!;
+    common.value = 'uncommitted input';
+    dark.focus();
+    tab.containerEl.scrollTop = 90;
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => { expect(dark.getAttribute('aria-pressed')).toBe('true'); });
+    expect(row('Language whitelist').querySelector('textarea')).toBe(common);
+    expect(common.value).toBe('uncommitted input');
+    expect(row('Editing theme')).toBe(selector);
+    expect(document.activeElement).toBe(dark);
+    expect(tab.containerEl.scrollTop).toBe(90);
+    const title = row('Title font size');
+    row('Header background').querySelector('select')!.focus();
+    change('Header background', 'custom');
+    await vi.waitFor(() => { expect(row('Custom background color')).toBeDefined(); });
+    expect(document.activeElement).toBe(row('Header background').querySelector('select'));
+    expect(row('Title font size')).toBe(title);
+    expect(row('Language whitelist').querySelector('textarea')).toBe(common);
+    const background = row('Header background');
+    change('Override output toggle color', true);
+    await vi.waitFor(() => { expect(row('Output toggle color')).toBeDefined(); });
+    expect(row('Header background')).toBe(background);
+    reset('Command spacing');
+    await vi.waitFor(() => { expect(row('Command spacing').querySelector('select')?.value).toBe('middle'); });
+    expect(row('Editing theme')).toBe(selector);
+    expect(common.value).toBe('uncommitted input');
+    expect(tab.containerEl.scrollTop).toBe(90);
+  });
+
+  it('disables dependent controls without discarding either theme or common values', async () => {
+    const { plugin, tab, row, change, reset } = fixture();
+    plugin.settings = parseSettings({
+      headerStyles: { light: { iconSize: 'large', languageLabel: 'emphasized' } },
+      outputToggleStyles: { light: { icon: 'hippo', overrideColor: true, color: '#123456' } },
+    });
+    tab.display();
+    const before = parseSettings(plugin.settings);
+    change('Show icon', false);
+    await vi.waitFor(() => { expect(row('Icon size').querySelector('select')?.disabled).toBe(true); });
+    expect(row('Icon size').querySelector('button')?.disabled).toBe(true);
+    expect(row('Language label style').querySelector('select')?.disabled).toBe(false);
+    change('Show language label', false);
+    await vi.waitFor(() => { expect(row('Language label style').querySelector('select')?.disabled).toBe(true); });
+    change('Header display', 'none');
+    await vi.waitFor(() => { expect(row('Header background').querySelector('select')?.disabled).toBe(true); });
+    expect(row('Show icon').querySelector('input')?.disabled).toBe(true);
+    expect(row('Title font size').querySelector('input')?.disabled).toBe(true);
+    expect(row('Line numbers').querySelector('select')?.disabled).toBe(false);
+    reset('Header display');
+    await vi.waitFor(() => { expect(row('Show icon').querySelector('input')?.disabled).toBe(false); });
+    change('Show icon', true);
+    change('Show language label', true);
+    await vi.waitFor(() => { expect(row('Language label style').querySelector('select')?.disabled).toBe(false); });
+    expect(row('Icon size').querySelector('select')?.value).toBe('large');
+    change('Command blocks', false);
+    await vi.waitFor(() => { expect(row('Output toggle icon').querySelector('select')?.disabled).toBe(true); });
+    expect(row('Output languages').querySelector('textarea')?.disabled).toBe(true);
+    expect(row('Command spacing').querySelector('select')?.disabled).toBe(true);
+    expect(row('Tap my hip-po!').querySelector('input')?.disabled).toBe(true);
+    expect(row('Header background').querySelector('select')?.disabled).toBe(false);
+    reset('Command blocks');
+    await vi.waitFor(() => { expect(row('Output toggle icon').querySelector('select')?.disabled).toBe(false); });
+    expect(plugin.settings).toEqual(before);
+  });
+
+  it('waits for pending saves before switching themes so edits stay with their original theme', async () => {
+    const { plugin, save, row, change } = fixture();
+    let finish: () => void = () => { throw new Error('Pending save not started.'); };
+    save.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    change('Icon size', 'large');
+    await vi.waitFor(() => { expect(save).toHaveBeenCalledOnce(); });
+    change('Editing theme', 'dark');
+    expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Light');
+    finish();
+    await vi.waitFor(() => {
+      expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    });
+    expect(plugin.settings.headerStyles.light.iconSize).toBe('large');
+    expect(plugin.settings.headerStyles.dark.iconSize).toBe('medium');
+    expect(row('Icon size').querySelector('select')?.value).toBe('medium');
+  });
+
+  it.each(['reopening', 'save failure'])('ignores a queued theme switch from a view replaced by %s', async (reason) => {
+    const { tab, save, row, change } = fixture();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let finish: () => void = () => { throw new Error('Pending save not started.'); };
+    save.mockImplementationOnce(() => new Promise<void>((resolve, reject) => {
+      finish = () => { if (reason === 'save failure') reject(new Error('Write failed')); else resolve(); };
+    }));
+    change('Header background', 'custom');
+    await vi.waitFor(() => { expect(save).toHaveBeenCalledOnce(); });
+    change('Editing theme', 'dark');
+    if (reason === 'reopening') tab.display();
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Light');
+    expect(row('Icon size').querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('Editing Light');
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => {
+      expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    });
+  });
+
   it('saves and resets output languages independently of language eligibility', async () => {
     const { plugin, saved, row, change, reset } = fixture();
     expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi');
@@ -155,7 +415,7 @@ describe('header appearance settings tab', () => {
   });
 
   it.each(COLOR_MODES)('saves and resets %s output icons, reversal and colors independently of the other mode and headers', async (mode) => {
-    const { plugin, tab, saved, row, change, reset } = fixture();
+    const { plugin, tab, saved, row, change, reset, modified } = fixture();
     plugin.settings = parseSettings({
       headerStyles: { light: { titleBold: true } },
       outputToggleStyles: {
@@ -166,7 +426,7 @@ describe('header appearance settings tab', () => {
     const before = parseSettings(plugin.settings);
     const other = mode === 'light' ? 'dark' : 'light';
     tab.display();
-    change('Color mode', mode);
+    change('Editing theme', mode);
     await vi.waitFor(() => {
       expect(row('Output toggle icon').querySelector('select')?.value).toBe(before.outputToggleStyles[mode].icon);
     });
@@ -201,8 +461,12 @@ describe('header appearance settings tab', () => {
       expected.outputToggleStyles[mode] = {
         ...expected.outputToggleStyles[mode], [key]: DEFAULT_SETTINGS.outputToggleStyles[mode][key],
       };
+      expect(modified(name)).toBe(true);
       reset(name);
-      await vi.waitFor(() => { expect(saved[saved.length - 1]).toEqual(expected); });
+      await vi.waitFor(() => {
+        expect(saved[saved.length - 1]).toEqual(expected);
+        expect(modified(name)).toBe(false);
+      });
     }
     expect(plugin.settings.outputToggleStyles[other]).toEqual(before.outputToggleStyles[other]);
     expect(plugin.settings.headerStyles).toEqual(before.headerStyles);
@@ -218,21 +482,21 @@ describe('header appearance settings tab', () => {
   });
 
   it.each(COLOR_MODES)('resets each %s appearance field without changing other settings', async (mode) => {
-    const { plugin, tab, saved, row, change, reset } = fixture();
+    const { plugin, tab, saved, row, change, reset, modified } = fixture();
     const customStyle: HeaderStyleSettings = {
       background: 'custom', backgroundColor: '#123456', iconSize: 'large',
       titleBold: true, titleItalic: true, titleFontSize: 20,
       overrideTitleColor: true, titleColor: '#abcdef', languageLabel: 'emphasized',
     };
     plugin.settings = parseSettings({
-      showIcon: false,
+      showHeaderCopyButton: true,
       headerStyles: {
         light: customStyle,
         dark: { ...customStyle, titleColor: '#fedcba' },
       },
     });
     tab.display();
-    change('Color mode', mode);
+    change('Editing theme', mode);
     await vi.waitFor(() => {
       expect(row('Custom title color').querySelector('input')?.value)
         .toBe(plugin.settings.headerStyles[mode].titleColor);
@@ -250,6 +514,7 @@ describe('header appearance settings tab', () => {
     ];
     for (const [key, name] of fields) {
       const before = parseSettings(plugin.settings);
+      expect(modified(name)).toBe(true);
       reset(name);
       const expected = {
         ...before,
@@ -261,6 +526,7 @@ describe('header appearance settings tab', () => {
       await vi.waitFor(() => {
         expect(plugin.settings).toEqual(expected);
         expect(saved[saved.length - 1]).toEqual(expected);
+        expect(modified(name)).toBe(false);
       });
     }
     expect(row('Icon size').querySelector('select')?.value).toBe('medium');
@@ -272,7 +538,7 @@ describe('header appearance settings tab', () => {
   it('resets global display toggles individually without resetting appearance', async () => {
     const { plugin, tab, saved, row, reset } = fixture();
     plugin.settings = parseSettings({
-      headerDisplay: 'none', showIcon: false, showLanguage: false, lineNumbers: 'none',
+      headerDisplay: 'always', showIcon: false, showLanguage: false, lineNumbers: 'none',
       headerStyles: { dark: { titleFontSize: 18 } },
     });
     tab.display();
@@ -395,7 +661,7 @@ describe('header appearance settings tab', () => {
         overrideTitleColor: true, titleColor: '#abcdef', languageLabel: 'emphasized',
       });
     });
-    change('Color mode', 'dark');
+    change('Editing theme', 'dark');
     await vi.waitFor(() => { expect(row('Header background').querySelector('select')?.value).toBe('code'); });
     change('Header background', 'lighter');
     await vi.waitFor(() => { expect(plugin.settings.headerStyles.dark.background).toBe('lighter'); });
@@ -408,22 +674,39 @@ describe('header appearance settings tab', () => {
     expect(Notice.messages[Notice.messages.length - 1]).toContain('positive whole number');
     expect(save).toHaveBeenCalledTimes(calls);
     expect(saved[saved.length - 1]).toEqual(plugin.settings);
-    change('Color mode', 'light');
+    change('Editing theme', 'light');
     await vi.waitFor(() => { expect(row('Custom background color').querySelector('input')?.value).toBe('#123456'); });
     expect(plugin.settings.headerStyles.dark.titleBold).toBe(false);
   });
 
   it('restores failed edits, reports the error, and allows subsequent saves', async () => {
-    const { plugin, save, row, change } = fixture();
+    const { plugin, save, row, change, reset, modified } = fixture();
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => {
+      expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    });
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     save.mockRejectedValueOnce(new Error('Write failed'));
     change('Icon size', 'large');
     await vi.waitFor(() => { expect(Notice.messages[Notice.messages.length - 1]).toContain('Failed to save settings'); });
     expect(row('Icon size').querySelector('select')?.value).toBe('medium');
-    expect(plugin.settings.headerStyles.light.iconSize).toBe('medium');
+    expect(plugin.settings.headerStyles.dark.iconSize).toBe('medium');
+    expect(modified('Icon size')).toBe(false);
+    expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Failed to save settings'), expect.any(Error));
     change('Bold title', true);
-    await vi.waitFor(() => { expect(plugin.settings.headerStyles.light.titleBold).toBe(true); });
+    await vi.waitFor(() => {
+      expect(plugin.settings.headerStyles.dark.titleBold).toBe(true);
+      expect(modified('Bold title')).toBe(true);
+    });
+    const notices = Notice.messages.length;
+    save.mockRejectedValueOnce(new Error('Reset failed'));
+    reset('Bold title');
+    await vi.waitFor(() => { expect(Notice.messages).toHaveLength(notices + 1); });
+    expect(plugin.settings.headerStyles.dark.titleBold).toBe(true);
+    expect(modified('Bold title')).toBe(true);
+    reset('Bold title');
+    await vi.waitFor(() => { expect(modified('Bold title')).toBe(false); });
   });
 
   it('serializes rapid edits so a pending save cannot overwrite a later setting', async () => {

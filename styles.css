@@ -1,3 +1,88 @@
+.motto-settings .motto-settings-level-2 > .setting-item-heading,
+.motto-settings .motto-settings-level-2 > .setting-item.mod-heading {
+  margin-block-start: 28px;
+}
+
+.motto-settings .motto-settings-level-2 > .setting-item-heading .setting-item-name,
+.motto-settings .motto-settings-level-2 > .setting-item.mod-heading .setting-item-name {
+  font-size: var(--font-ui-large);
+}
+
+.motto-settings .motto-settings-level-3 > .setting-item-heading,
+.motto-settings .motto-settings-level-3 > .setting-item.mod-heading {
+  color: var(--text-muted);
+}
+
+.motto-settings .motto-settings-level-4 > .setting-item-heading,
+.motto-settings .motto-settings-level-4 > .setting-item.mod-heading {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.motto-theme-setting-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  vertical-align: -2px;
+}
+
+.setting-item-name .motto-theme-setting-icon {
+  margin-inline-start: 6px;
+}
+
+.motto-theme-setting-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.motto-settings .motto-reset-modified .svg-icon {
+  color: var(--text-accent);
+}
+
+.motto-settings .motto-theme-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-secondary);
+}
+
+.motto-theme-switch button {
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-s, 4px);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.motto-theme-switch button[aria-pressed="true"] {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 15%);
+}
+
+@media (max-width: 600px) {
+  .motto-settings .setting-item:not(.setting-item-heading, .mod-heading) {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .motto-settings .setting-item-control:has(textarea) {
+    flex-basis: 100%;
+  }
+
+  .motto-settings .setting-item-control {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .motto-settings .setting-item-control :is(select, textarea) { min-width: 0; }
+  .motto-settings textarea { width: 100%; max-width: 100%; }
+}
+
 .motto-header {
   --motto-header-background: var(--motto-light-background, var(--code-background));
   --motto-header-icon-size: var(--motto-light-icon-size, 28px);

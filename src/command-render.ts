@@ -45,7 +45,7 @@ export function setOutputToggle(
       icon.classList.add('motto-output-icon-hippo');
       const mark = button.ownerDocument.createElement('span');
       mark.className = 'motto-output-hippo';
-      mark.classList.toggle('motto-output-hippo-flipped', closing);
+      mark.classList.toggle('motto-output-hippo-flipped', !closing);
       mark.style.maskImage = `url(${JSON.stringify(hippoIcon)})`;
       icon.append(mark);
     } else {
@@ -87,8 +87,8 @@ async function highlightOutput(code: HTMLElement): Promise<void> {
     const prism: { highlightElement(element: HTMLElement): void } = await loadPrism();
     prism.highlightElement(code);
   } catch (error) {
-    console.error('[Motto Codeblock] Failed to highlight output.', error);
-    new Notice('Motto Codeblock: Failed to highlight output.');
+    console.error('[Motto Code Block] Failed to highlight output.', error);
+    new Notice('Motto Code Block: Failed to highlight output.');
   }
 }
 
@@ -192,5 +192,5 @@ export function cloneCodeRange(code: HTMLElement, from: number, to: number): Doc
     }
     base += length;
   }
-  throw new Error('[Motto Codeblock] Command range is outside the native code.');
+  throw new Error('[Motto Code Block] Command range is outside the native code.');
 }

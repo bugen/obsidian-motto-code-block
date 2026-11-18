@@ -291,12 +291,12 @@ describe('live preview headers', () => {
     expect(document.activeElement).toBe(toggle);
     expect(toggle.querySelector('.motto-output-icon-light svg')?.getAttribute('data-icon')).toBe('monitor');
     expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo')).not.toBeNull();
-    expect(toggle.querySelector('.motto-output-hippo-flipped')).toBeNull();
+    expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo-flipped')).not.toBeNull();
     expect(toggle.style.getPropertyValue('--motto-output-dark-color')).toBe('#abcdef');
     expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
     toggle.click();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo-flipped')).not.toBeNull();
+    expect(toggle.querySelector('.motto-output-hippo-flipped')).toBeNull();
     updateSettings(DEFAULT_SETTINGS);
     expect(toggle.style.getPropertyValue('--motto-output-dark-color')).toBe('');
     expect(toggle.querySelector('.motto-output-icon-light svg')?.getAttribute('data-icon')).toBe('eye');

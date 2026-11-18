@@ -38,7 +38,7 @@ class HippoSpeech {
 
   constructor(button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles']) {
     const window = button.ownerDocument.defaultView;
-    if (!window) throw new Error('[Motto Codeblock] Hippo speech requires a document window.');
+    if (!window) throw new Error('[Motto Code Block] Hippo speech requires a document window.');
     this.button = button;
     this.window = window;
     this.open = open;
