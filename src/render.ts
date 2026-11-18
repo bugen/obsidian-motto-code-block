@@ -84,11 +84,11 @@ export async function copyCode(document: Document, text: string): Promise<void> 
 
 export function createHeader(
   document: Document,
-  block: Pick<CodeBlock, 'language' | 'title' | 'headerStyle' | 'text' | 'hasParameters' | 'terminal'>,
+  block: Pick<CodeBlock, 'language' | 'title' | 'headerStyle' | 'text' | 'hasParameters' | 'exclude' | 'terminal'>,
   settings: MottoSettings,
   folding?: { state: FoldState; toggle: (header: HTMLElement) => void },
 ): HTMLElement | null {
-  if (!shouldShowHeader(settings.headerDisplay, block.hasParameters)) return null;
+  if (block.exclude || !shouldShowHeader(settings.headerDisplay, block.hasParameters)) return null;
   const header = document.createElement('div');
   header.className = 'motto-header';
   const terminal = settings.commandBlocks ? block.terminal : undefined;

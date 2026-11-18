@@ -44,7 +44,7 @@ export class ReadingHeaders {
     const source = await this.readSource(context.sourcePath);
     if (this.disposed || source === undefined) return;
     const settings = this.getSettings();
-    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings));
+    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings), settings.outputLanguages);
     reportDiagnostics(result.diagnostics, context.sourcePath);
     const used = new Set<number>();
     for (const mount of this.mounts.values()) {
@@ -100,7 +100,7 @@ export class ReadingHeaders {
     for (const mount of this.mounts.values()) {
       let blocks = parsed.get(mount.source);
       if (!blocks) {
-        blocks = new Map(parseCodeBlocks(mount.source, (language) => isLanguageEnabled(language, settings))
+        blocks = new Map(parseCodeBlocks(mount.source, (language) => isLanguageEnabled(language, settings), settings.outputLanguages)
           .blocks.map((block) => [block.from, block]));
         parsed.set(mount.source, blocks);
       }
@@ -131,7 +131,7 @@ export class ReadingHeaders {
     const settings = this.getSettings();
     mount.header?.remove();
     mount.header = null;
-    if (!isLanguageEnabled(mount.block.language, settings)) {
+    if (mount.block.exclude || !isLanguageEnabled(mount.block.language, settings)) {
       mount.expandFooter?.remove();
       mount.expandFooter = null;
       mount.layout?.destroy();
@@ -160,6 +160,7 @@ export class ReadingHeaders {
       };
       let output: ReadingOutputView;
       if (mount.layout instanceof ReadingOutputView && mount.layout.block.text === mount.block.text &&
+          mount.layout.block.language === mount.block.language &&
           mount.layout.block.lineCount === mount.block.lineCount) {
         output = mount.layout;
       } else {
@@ -214,7 +215,7 @@ export class ReadingHeaders {
           Object.assign(outputState, nextOutputState(output, outputState));
           if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputOpen(outputState.open);
           this.renderOutputs();
-        } : undefined);
+        } : undefined, settings.tapMyHippo, settings.commandSpacing);
       return;
     }
     if (mount.block.language === 'ansi') {

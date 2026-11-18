@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
+import * as obsidian from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseCodeBlocks, parseInfo } from '../src/codeblock';
 import { ansiPreview, commandOutput, commandOutputPreview, commandTools, setOutputToggle } from '../src/command-render';
@@ -15,6 +16,33 @@ afterEach(() => {
 });
 
 describe('header display', () => {
+  it.each(['text', 'json', 'xml'])('renders and copies %s output literally without ANSI stripping or HTML interpretation', async (language) => {
+    const text = '\x1b[31m<img src=x onerror=alert(1)>\x1b[0m\nlast line';
+    const block = parseCodeBlocks(`\`\`\`${language}\n${text}\n\`\`\``).blocks[0]!;
+    const preview = commandOutputPreview(document, block, undefined, vi.fn());
+    const code = preview.element.querySelector('code')!;
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    expect(code.classList.contains(`language-${language}`)).toBe(true);
+    await vi.waitFor(() => {
+      expect(code.textContent).toBe(text);
+      expect(code.querySelectorAll('.token').length > 0).toBe(language !== 'text');
+    });
+    expect(code.querySelector('img, script, a')).toBeNull();
+    preview.element.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(text);
+    preview.destroy();
+  });
+
+  it('reports highlighting failures while retaining the original output text', async () => {
+    const error = new Error('Prism unavailable');
+    vi.spyOn(obsidian, 'loadPrism').mockRejectedValueOnce(error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const output = commandOutput(document, '{"ok":true}', undefined, 'json');
+    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith('[Motto Codeblock] Failed to highlight output.', error); });
+    expect(Notice.messages).toContain('Motto Codeblock: Failed to highlight output.');
+    expect(output.querySelector('code')?.textContent).toBe('{"ok":true}');
+  });
+
   it.each(['markdown-rendered', 'markdown-source-view'])('aligns command and output copy controls on the same vertical axis in %s', (context) => {
     const stylesheet = document.createElement('style');
     stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
@@ -364,9 +392,19 @@ describe('header display', () => {
 
   it.each([
     ['default', 'js', false], ['default', '', false],
+    ['default', 'js arbitrary custom:value', false],
+    ['default', 'sh custom:"title:Run user:root fold"', false],
+    ['default', 'sh title user host', false],
+    ['default', 'sh custom:value title:Run', true],
+    ['always', 'js arbitrary custom:value', true],
+    ['default', 'sh cmd', false], ['default', 'bash COMMAND', false],
+    ['default', 'sh cmd command', false], ['default', 'sh cmd title:Run', true],
+    ['default', 'sh command user:root', true], ['always', 'sh cmd', true],
+    ['none', 'sh command title:Run', false],
     ['default', 'js fold', true], ['default', 'js expand', true],
     ['default', 'js title:""', true], ['always', 'js', true],
     ['none', 'js title:Example fold', false],
+    ['always', 'sh cmd exclude title:Ignored', false],
   ] as const)('uses %s visibility for %j', (headerDisplay, info, visible) => {
     const header = createHeader(document, { ...parseInfo(info), text: 'run()' }, {
       ...DEFAULT_SETTINGS, headerDisplay,

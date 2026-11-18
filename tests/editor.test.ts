@@ -33,9 +33,193 @@ afterEach(() => {
   for (const view of views.splice(0)) view.destroy();
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('live preview headers', () => {
+  it.each([
+    ['text', 'line one\n\nline three\nline four'],
+    ['json', '{\n  "ok": true,\n  "count": 2\n}'],
+    ['xml', '<result>\n  <value>2</value>\n  <empty />\n</result>'],
+  ])('previews, copies and edits configured %s output without changing other source', async (language, text) => {
+    const doc = `Intro\n\n\`\`\`sh title:Command\ncat result\n\`\`\`\n\`\`\`${language} expand:2\n${text}\n\`\`\``;
+    const { view, updateSettings } = fixture(true, doc);
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    expect(view.dom.querySelector('.motto-output-toggle')).toBeNull();
+    const settings = parseSettings({ outputLanguages: ['ansi', language] });
+    updateSettings(settings);
+    const output = () => view.dom.querySelector<HTMLElement>('.motto-command-output')!;
+    expect(output().querySelector('code')?.classList.contains(`language-${language}`)).toBe(true);
+    expect(output().querySelector('code')?.textContent).toBe(text);
+    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
+    output().querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(text);
+    output().querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
+    expect(output().querySelector('.motto-partial-codeblock')).toBeNull();
+    view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
+    view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(output()).toBeNull();
+    view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    output().querySelector<HTMLButtonElement>('[aria-label="Edit source"]')!.click();
+    expect(view.dom.querySelector('.motto-command-output-source')).not.toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+    view.dispatch({ changes: { from: doc.indexOf(text), insert: 'X' } });
+    view.dispatch({ selection: { anchor: 0 } });
+    await vi.waitFor(() => { expect(output().querySelector('code')?.textContent).toBe(`X${text}`); });
+    updateSettings(DEFAULT_SETTINGS);
+    expect(view.dom.querySelector('.motto-output-toggle, .motto-command-output')).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc.replace(text, `X${text}`));
+    updateSettings(settings);
+    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
+    expect(output().querySelector('code')?.textContent).toBe(`X${text}`);
+  });
+
+  it('replaces cached output when only its language changes', () => {
+    const doc = 'Intro\n\n```sh\nrun\n```\n```json expand\n{"ok":true}\n```';
+    const { view } = fixture(true, doc, parseSettings({ outputLanguages: ['json', 'xml'] }));
+    expect(view.dom.querySelector('.motto-command-output code')?.className).toBe('language-json');
+    const from = doc.indexOf('json');
+    view.dispatch({ changes: { from, to: from + 4, insert: 'xml' } });
+    expect(view.dom.querySelector('.motto-command-output code')?.className).toBe('language-xml');
+    expect(view.state.doc.toString()).toBe(doc.replace('```json', '```xml'));
+  });
+
+  it('spaces only visible command boundaries and preserves continuations, copies and output focus on refresh', () => {
+    const commands = 'printf \\\n  "hello"\npwd\nwhoami';
+    const doc = `Intro\n\n\`\`\`bash cmd\n${commands}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``;
+    const { view, updateSettings } = fixture(true, doc);
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    expect(view.dom.querySelectorAll('.motto-command-gap')).toHaveLength(2);
+    const toggle = view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    toggle.click();
+    toggle.focus();
+    for (const commandSpacing of ['small', 'middle', 'large'] as const) {
+      updateSettings({ ...DEFAULT_SETTINGS, commandSpacing });
+      const gaps = view.dom.querySelectorAll('.motto-command-gap');
+      expect(gaps).toHaveLength(commandSpacing === 'small' ? 0 : 2);
+      if (commandSpacing !== 'small') {
+        expect(gaps[0]?.textContent).toContain('  "hello"');
+        expect(gaps[1]?.textContent).toContain('pwd');
+        for (const gap of gaps) expect(gap.classList.contains(`motto-command-spacing-${commandSpacing}`)).toBe(true);
+      }
+      view.dom.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+      expect(write).toHaveBeenLastCalledWith('printf \\\n  "hello"');
+      expect(view.dom.querySelector('.motto-output-toggle')).toBe(toggle);
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(document.activeElement).toBe(toggle);
+      expect(view.state.doc.toString()).toBe(doc);
+    }
+    const from = doc.indexOf('cmd') + 'cmd'.length;
+    view.dispatch({ changes: { from, insert: ' expand:2' } });
+    expect(view.dom.querySelector('.motto-command-gap')).toBeNull();
+    expect(view.dom.querySelector('.motto-expand-button')).not.toBeNull();
+  });
+
+  it('updates headers only when supported parameters are added or removed', () => {
+    const doc = 'Intro\n\n```js arbitrary custom:"title:Ignored user:root fold" title user host\nrun()\n```';
+    const { view } = fixture(true, doc);
+    expect(view.dom.querySelector('.motto-header')).toBeNull();
+    const from = doc.indexOf('\nrun()');
+    const parameter = ' title:Shown';
+    view.dispatch({ changes: { from, insert: parameter } });
+    expect(view.dom.querySelector('.motto-header-title')?.textContent).toBe('Shown');
+    view.dispatch({ changes: { from, to: from + parameter.length } });
+    expect(view.dom.querySelector('.motto-header')).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it.each(['cmd', 'command'])('renders explicit %s commands without metadata or paired output', (flag) => {
+    const doc = `Intro\n\n\`\`\`bash ${flag}\npwd\n\`\`\``;
+    const { view, updateSettings } = fixture(true, doc);
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    expect(view.dom.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    expect(view.dom.querySelector('.motto-command-context, .motto-output-toggle')).toBeNull();
+    expect(view.dom.querySelector('.motto-header')).toBeNull();
+    updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'always' });
+    expect(view.dom.querySelector('.motto-header')).not.toBeNull();
+    updateSettings(DEFAULT_SETTINGS);
+    expect(view.dom.querySelector('.motto-header')).toBeNull();
+    view.dom.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith('pwd');
+    updateSettings({ ...DEFAULT_SETTINGS, commandBlocks: false });
+    expect(view.dom.querySelector('.motto-command-marker, .motto-command-prompt')).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it.each(['js', 'ansi', 'bash', 'my-language', ''])(
+    'honors exclude on %j blocks across edits, refresh and selection changes', (language) => {
+      const settings = parseSettings({ languageWhitelist: [language || 'plaintext'] });
+      const doc = `Intro\n\n\`\`\`${language} title:Test cmd expand:1 exclude\nfirst\nsecond\n\`\`\``;
+      const { view, headers } = fixture(true, doc, settings);
+      expect(view.dom.querySelector('[class*="motto-"]')).toBeNull();
+      const from = doc.indexOf(' exclude');
+      view.dispatch({ changes: { from, to: from + ' exclude'.length } });
+      expect(view.dom.querySelector('.motto-header')).not.toBeNull();
+      expect(view.dom.querySelector('.motto-expand-button')).not.toBeNull();
+      view.dispatch({ changes: { from, insert: ' exclude' } });
+      headers.refresh();
+      expect(view.dom.querySelector('[class*="motto-"]')).toBeNull();
+      expect(view.contentDOM.textContent).toContain('second');
+      view.dispatch({ selection: { anchor: doc.indexOf('first') } });
+      expect(runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true }), 'editor')).toBe(false);
+      expect(view.state.selection.main.empty).toBe(true);
+      expect(view.state.doc.toString()).toBe(doc);
+    },
+  );
+
+  it.each(['sh', 'ansi'])('breaks and restores output pairing when %s gains or loses exclude', (excluded) => {
+    const doc = 'Intro\n\n```sh cmd\npwd\n```\n```ansi\n/srv\n```';
+    const { view } = fixture(true, doc);
+    view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
+    const from = doc.indexOf(`\`\`\`${excluded}`) + `\`\`\`${excluded}`.length;
+    view.dispatch({ changes: { from, insert: ' exclude' } });
+    expect(view.dom.querySelector('.motto-output-toggle, .motto-command-output')).toBeNull();
+    if (excluded === 'sh') {
+      expect(view.dom.querySelector('.motto-command-prompt')).toBeNull();
+      expect(view.dom.querySelector('.motto-ansi-standalone code')?.textContent).toBe('/srv');
+      expect(view.contentDOM.textContent).toContain('```sh exclude cmd');
+    } else {
+      expect(view.dom.querySelector('.motto-ansi-standalone')).toBeNull();
+      expect(view.dom.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+      expect(view.contentDOM.textContent).toContain('```ansi exclude');
+    }
+    view.dispatch({ changes: { from, to: from + ' exclude'.length } });
+    view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it.each(['pwd', ''])('keeps Hippo replies for command %j across widget updates and removes them in source mode', async (command) => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const settings = parseSettings({
+      tapMyHippo: true, outputToggleStyles: { light: { icon: 'hippo' } },
+    });
+    const doc = `Intro\n\n\`\`\`sh\n${command}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``;
+    const { view, updateSettings } = fixture(true, doc, settings);
+    const button = view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 200, 32, 24));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(document.querySelector('.motto-hippo-speech')?.textContent).toBe('Tap my hip-po!');
+    button.click();
+    expect(view.dom.querySelector('.motto-output-toggle')).toBe(button);
+    expect(document.querySelector('.motto-hippo-speech')?.textContent).toBe('You rang?');
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
+    updateSettings({ ...settings, tapMyHippo: false });
+    expect(document.querySelector('.motto-hippo-speech')).toBeNull();
+    updateSettings(settings);
+    button.click();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(document.querySelector('.motto-hippo-speech')).not.toBeNull();
+    view.dispatch({ effects: setLivePreview.of(false) });
+    expect(document.querySelector('.motto-hippo-speech')).toBeNull();
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(document.querySelector('.motto-hippo-speech')).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
   it.each(['js', 'ansi', 'bash', 'my-language', ''])(
     'leaves excluded %j source and selection behavior alone and refreshes eligibility', (language) => {
       const name = language || 'plaintext';
@@ -286,12 +470,18 @@ describe('live preview headers', () => {
     }
   });
 
-  it('keeps command source editable, copies continuations and preserves output-toggle focus', () => {
+  it.each([
+    ['user:root host:server cwd:/srv/app', 'root@server:/srv/app'],
+    ['prompt:"root@server:/srv/app"', 'root@server:/srv/app'],
+    ['prompt:"root"', 'root'],
+    ['prompt:"root@server"', 'root@server'],
+  ])('keeps commands editable and preserves copies and toggle focus with %s', (metadata, contextText) => {
     const commands = 'pwd\nprintf \\\n  "hello"';
     const output = '\x1b[32mUNIQUE OUTPUT\x1b[0m';
-    const doc = `Intro\n\n\`\`\`sh user:root host:server cwd:/srv/app\n${commands}\n\`\`\`\n\`\`\`ansi\n${output}\n\`\`\``;
+    const doc = `Intro\n\n\`\`\`sh ${metadata}\n${commands}\n\`\`\`\n\`\`\`ansi\n${output}\n\`\`\``;
     const { view } = fixture(true, doc, { ...DEFAULT_SETTINGS, showHeaderCopyButton: true });
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    expect(view.dom.querySelector('.motto-command-context')?.textContent).toBe(contextText);
     expect([...view.dom.querySelectorAll('.motto-command-prompt')].map((node) => node.textContent)).toEqual(['#', '#']);
     expect(view.dom.querySelector('.motto-line-number')).toBeNull();
     expect(view.contentDOM.textContent).toContain('pwd');

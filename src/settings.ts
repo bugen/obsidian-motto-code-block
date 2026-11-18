@@ -6,12 +6,14 @@ export const HEADER_DISPLAY_MODES = ['default', 'always', 'none'] as const;
 export const LINE_NUMBER_MODES = ['default', 'always', 'none'] as const;
 export const FOLD_STATES = ['expanded', 'folded', 'partial'] as const;
 export const OUTPUT_TOGGLE_ICONS = ['eye', 'monitor', 'expand', 'book', 'chevron', 'hippo'] as const;
+export const COMMAND_SPACING_MODES = ['small', 'middle', 'large'] as const;
 
 export type ColorMode = typeof COLOR_MODES[number];
 export type HeaderDisplayMode = typeof HEADER_DISPLAY_MODES[number];
 export type LineNumberMode = typeof LINE_NUMBER_MODES[number];
 export type FoldState = typeof FOLD_STATES[number];
 export type OutputToggleIcon = typeof OUTPUT_TOGGLE_ICONS[number];
+export type CommandSpacing = typeof COMMAND_SPACING_MODES[number];
 
 export interface OutputToggleStyleSettings {
   icon: OutputToggleIcon;
@@ -37,6 +39,9 @@ export interface MottoSettings {
   languageBlacklist: string[];
   headerDisplay: HeaderDisplayMode;
   commandBlocks: boolean;
+  outputLanguages: string[];
+  commandSpacing: CommandSpacing;
+  tapMyHippo: boolean;
   showIcon: boolean;
   showLanguage: boolean;
   showHeaderCopyButton: boolean;
@@ -67,6 +72,9 @@ export const DEFAULT_SETTINGS: Readonly<MottoSettings> = {
   languageBlacklist: ['mermaid'],
   headerDisplay: 'default',
   commandBlocks: true,
+  outputLanguages: ['ansi'],
+  commandSpacing: 'middle',
+  tapMyHippo: false,
   showIcon: true,
   showLanguage: true,
   showHeaderCopyButton: false,
@@ -183,6 +191,7 @@ export function parseSettings(data: unknown): MottoSettings {
     ...DEFAULT_SETTINGS,
     languageWhitelist: [...DEFAULT_SETTINGS.languageWhitelist],
     languageBlacklist: [...DEFAULT_SETTINGS.languageBlacklist],
+    outputLanguages: [...DEFAULT_SETTINGS.outputLanguages],
     headerStyles: {
       light: { ...DEFAULT_SETTINGS.headerStyles.light },
       dark: { ...DEFAULT_SETTINGS.headerStyles.dark },
@@ -197,18 +206,22 @@ export function parseSettings(data: unknown): MottoSettings {
     console.warn('[Motto Codeblock] Invalid saved settings; using defaults.');
     return settings;
   }
-  for (const key of ['languageWhitelist', 'languageBlacklist'] as const) {
+  for (const key of ['languageWhitelist', 'languageBlacklist', 'outputLanguages'] as const) {
     if (!(key in data)) continue;
     const value: unknown = data[key];
     if (Array.isArray(value) && value.every((entry): entry is string => typeof entry === 'string')) {
       settings[key] = normalizeLanguageList(value.join('\n'));
     } else console.warn(`[Motto Codeblock] Invalid setting "${key}"; using its default.`);
   }
-  for (const key of ['commandBlocks', 'showIcon', 'showLanguage', 'showHeaderCopyButton'] as const) {
+  for (const key of ['commandBlocks', 'tapMyHippo', 'showIcon', 'showLanguage', 'showHeaderCopyButton'] as const) {
     if (!(key in data)) continue;
     const value: unknown = Reflect.get(data, key);
     if (typeof value === 'boolean') settings[key] = value;
     else console.warn(`[Motto Codeblock] Invalid setting "${key}"; using its default.`);
+  }
+  if ('commandSpacing' in data) {
+    if (isChoice(data.commandSpacing, COMMAND_SPACING_MODES)) settings.commandSpacing = data.commandSpacing;
+    else console.warn('[Motto Codeblock] Invalid setting "commandSpacing"; using its default.');
   }
   if ('headerDisplay' in data) {
     if (isChoice(data.headerDisplay, HEADER_DISPLAY_MODES)) settings.headerDisplay = data.headerDisplay;

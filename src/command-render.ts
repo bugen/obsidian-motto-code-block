@@ -1,10 +1,11 @@
-import { setIcon } from 'obsidian';
+import { loadPrism, Notice, setIcon } from 'obsidian';
 import { ansiText, renderAnsi } from './ansi';
 import { copyCode, createExpandFooter } from './render';
 import type { CodeBlock } from './codeblock';
 import { COLOR_MODES, type MottoSettings, type OutputToggleIcon } from './settings';
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import hippoIcon from './hippo.svg';
+import { replyToHippo, updateHippoSpeech } from './hippo-speech';
 
 export function commandCopyButton(document: Document, text: string, label: string): HTMLButtonElement {
   const button = document.createElement('button');
@@ -28,7 +29,7 @@ const OUTPUT_TOGGLE_GLYPHS: Record<Exclude<OutputToggleIcon, 'hippo'>, readonly 
 };
 
 export function setOutputToggle(
-  button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles'],
+  button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles'], tapMyHippo = false,
 ): void {
   const label = open ? 'Hide output' : 'Show output';
   button.setAttribute('aria-expanded', String(open));
@@ -55,10 +56,12 @@ export function setOutputToggle(
     if (style.overrideColor) button.style.setProperty(property, style.color);
     else button.style.removeProperty(property);
   }
+  updateHippoSpeech(button, open, styles, tapMyHippo);
 }
 
 export function commandTools(
-  document: Document, text: string | null, open: boolean, styles: MottoSettings['outputToggleStyles'], toggle?: () => void,
+  document: Document, text: string | null, open: boolean, styles: MottoSettings['outputToggleStyles'],
+  toggle?: () => void, tapMyHippo = false,
 ): HTMLElement {
   const tools = document.createElement('span');
   tools.className = 'motto-command-tools';
@@ -66,10 +69,11 @@ export function commandTools(
     const button = document.createElement('button');
     button.className = 'motto-command-button motto-output-toggle';
     button.type = 'button';
-    setOutputToggle(button, open, styles);
+    setOutputToggle(button, open, styles, tapMyHippo);
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      replyToHippo(button);
       toggle();
     });
     tools.append(button);
@@ -78,7 +82,19 @@ export function commandTools(
   return tools;
 }
 
-export function commandOutput(document: Document, text: string, edit?: () => void): HTMLElement {
+async function highlightOutput(code: HTMLElement): Promise<void> {
+  try {
+    const prism: { highlightElement(element: HTMLElement): void } = await loadPrism();
+    prism.highlightElement(code);
+  } catch (error) {
+    console.error('[Motto Codeblock] Failed to highlight output.', error);
+    new Notice('Motto Codeblock: Failed to highlight output.');
+  }
+}
+
+export function commandOutput(
+  document: Document, text: string, edit?: () => void, language = 'ansi',
+): HTMLElement {
   const output = document.createElement('div');
   output.className = 'motto-ansi-view motto-command-output';
   const tools = document.createElement('div');
@@ -95,10 +111,15 @@ export function commandOutput(document: Document, text: string, edit?: () => voi
     });
     tools.append(button);
   }
-  tools.append(commandCopyButton(document, ansiText(text), 'Copy output'));
+  tools.append(commandCopyButton(document, language === 'ansi' ? ansiText(text) : text, 'Copy output'));
   const pre = document.createElement('pre');
   const code = document.createElement('code');
-  code.append(renderAnsi(document, text));
+  if (language === 'ansi') code.append(renderAnsi(document, text));
+  else {
+    code.className = `language-${language || 'plaintext'}`;
+    code.textContent = text;
+    void highlightOutput(code);
+  }
   pre.append(code);
   output.append(tools, pre);
   return output;
@@ -107,7 +128,7 @@ export function commandOutput(document: Document, text: string, edit?: () => voi
 export function commandOutputPreview(
   document: Document, block: CodeBlock, preview: number | undefined, expand: () => void, edit?: () => void,
 ): { element: HTMLElement; destroy: () => void } {
-  const element = commandOutput(document, block.text, edit);
+  const element = commandOutput(document, block.text, edit, block.language);
   const pre = element.querySelector<HTMLElement>('pre')!;
   const code = pre.querySelector<HTMLElement>('code')!;
   const layout = preview !== undefined ? new ReadingCodeLayout(pre, code, block.lineCount, false, preview) : null;

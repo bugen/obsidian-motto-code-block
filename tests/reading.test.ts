@@ -48,9 +48,242 @@ afterEach(() => {
   for (const renderer of renderers.splice(0)) renderer.destroy();
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('reading mode headers', () => {
+  it.each([
+    ['text', 'line one\n\nline three\nline four'],
+    ['json', '{\n  "ok": true,\n  "count": 2\n}'],
+    ['xml', '<result>\n  <value>2</value>\n  <empty />\n</result>'],
+  ])('renders configured %s output with previews, full copies and reversible pairing', async (language, text) => {
+    const source = `\`\`\`sh title:Command\ncat result\n\`\`\`\n\`\`\`${language} expand:2\n${text}\n\`\`\``;
+    const { renderer, context, updateSettings, updateSource } = fixture(source);
+    const shell = block('cat result', 'sh');
+    const native = block(text, language);
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const process = async () => {
+      await renderer.process(shell.section, context);
+      await renderer.process(native.section, context);
+    };
+    await process();
+    expect(shell.section.querySelector('.motto-output-toggle')).toBeNull();
+    const settings = parseSettings({ outputLanguages: ['ansi', language] });
+    updateSettings(settings);
+    const output = () => native.section.querySelector<HTMLElement>('.motto-command-output')!;
+    expect(output().querySelector('code')?.textContent).toBe(text);
+    expect(output().querySelector('code')?.classList.contains(`language-${language}`)).toBe(true);
+    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
+    expect(output().querySelector('result, value, empty')).toBeNull();
+    output().querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(text);
+    output().querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
+    expect(output().querySelector('.motto-partial-codeblock')).toBeNull();
+    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
+    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(output().hidden).toBe(true);
+    updateSettings(DEFAULT_SETTINGS);
+    expect(shell.section.querySelector('.motto-output-toggle')).toBeNull();
+    expect(native.pre.classList.contains('motto-command-native')).toBe(false);
+    expect(native.code.firstChild).toBe(native.token);
+    expect(native.pre.querySelector('.copy-code-button')).toBe(native.copy);
+    updateSettings(settings);
+    expect(output().hidden).toBe(false);
+    updateSource(source.replace(`\`\`\`${language}`, `\`\`\`${language} exclude`));
+    await process();
+    expect(shell.section.querySelector('.motto-output-toggle')).toBeNull();
+    expect(native.section.querySelector('[class*="motto-"]')).toBeNull();
+    expect(native.code.textContent).toBe(`${text}\n`);
+  });
+
+  it('refreshes output highlighting when only the fence language changes', async () => {
+    const source = '```sh\nrun\n```\n```json expand\n{"ok":true}\n```';
+    const settings = parseSettings({ outputLanguages: ['json', 'xml'] });
+    const { renderer, context, updateSource } = fixture(source, settings);
+    const shell = block('run', 'sh');
+    const native = block('{"ok":true}', 'json');
+    const container = document.createElement('div');
+    container.append(shell.section, native.section);
+    document.body.append(container);
+    await renderer.process(container, context);
+    expect(native.section.querySelector('.motto-command-output code')?.className).toBe('language-json');
+    updateSource(source.replace('```json', '```xml'));
+    native.code.className = 'language-xml';
+    await renderer.process(container, context);
+    expect(native.section.querySelector('.motto-command-output code')?.className).toBe('language-xml');
+    expect(native.code.textContent).toBe('{"ok":true}\n');
+  });
+
+  it('updates spacing only between visible commands while preserving continuations, copies and open output', async () => {
+    const commands = 'printf \\\n  "hello"\npwd\nwhoami';
+    const source = `\`\`\`bash cmd\n${commands}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``;
+    const { renderer, context, updateSettings, updateSource } = fixture(source);
+    const shell = block(commands, 'bash');
+    const ansi = block('/srv', 'ansi');
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    await renderer.process(shell.section, context);
+    await renderer.process(ansi.section, context);
+    expect(shell.section.querySelector('.motto-command-spacing-middle')).not.toBeNull();
+    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    for (const commandSpacing of ['small', 'middle', 'large'] as const) {
+      updateSettings({ ...DEFAULT_SETTINGS, commandSpacing });
+      expect(shell.section.querySelector(`.motto-command-view.motto-command-spacing-${commandSpacing}`)).not.toBeNull();
+      const rows = shell.section.querySelectorAll('.motto-command-row');
+      expect([...rows].map((row) => row.querySelector('code')?.textContent)).toEqual([
+        'printf \\\n  "hello"', 'pwd', 'whoami',
+      ]);
+      rows[0]!.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+      expect(write).toHaveBeenLastCalledWith('printf \\\n  "hello"');
+      expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(false);
+    }
+    updateSource(source.replace('bash cmd', 'bash cmd expand:2'));
+    await renderer.process(shell.section, context);
+    expect(shell.section.querySelectorAll('.motto-command-row')).toHaveLength(1);
+    expect(shell.section.querySelector('.motto-expand-button')).not.toBeNull();
+    expect(shell.code.textContent).toBe(`${commands}\n`);
+  });
+
+  it('updates headers only when supported parameters are added or removed', async () => {
+    const source = '```js arbitrary custom:"title:Ignored user:root fold" title user host\nrun()\n```';
+    const { renderer, context, updateSource } = fixture(source);
+    const native = block('run()');
+    await renderer.process(native.section, context);
+    expect(native.section.querySelector('.motto-header')).toBeNull();
+    updateSource(source.replace('\n', ' title:Shown\n'));
+    await renderer.process(native.section, context);
+    expect(native.section.querySelector('.motto-header-title')?.textContent).toBe('Shown');
+    updateSource(source);
+    await renderer.process(native.section, context);
+    expect(native.section.querySelector('.motto-header')).toBeNull();
+    expect(native.code.textContent).toBe('run()\n');
+    expect(native.code.firstChild).toBe(native.token);
+    expect(native.pre.querySelector('.copy-code-button')).toBe(native.copy);
+  });
+
+  it.each(['cmd', 'command'])('renders explicit %s commands without metadata or paired output', async (flag) => {
+    const { renderer, context, updateSettings } = fixture(`\`\`\`bash ${flag}\npwd\n\`\`\``);
+    const native = block('pwd', 'bash');
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    await renderer.process(native.section, context);
+    expect(native.section.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    expect(native.section.querySelector('.motto-command-context, .motto-output-toggle')).toBeNull();
+    expect(native.section.querySelector('.motto-header')).toBeNull();
+    updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'always' });
+    expect(native.section.querySelector('.motto-header')).not.toBeNull();
+    updateSettings(DEFAULT_SETTINGS);
+    expect(native.section.querySelector('.motto-header')).toBeNull();
+    native.section.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith('pwd');
+    expect(native.code.textContent).toBe('pwd\n');
+    updateSettings({ ...DEFAULT_SETTINGS, commandBlocks: false });
+    expect(native.section.querySelector('.motto-command-view, .motto-command-prompt')).toBeNull();
+    expect(native.pre.classList.contains('motto-command-native')).toBe(false);
+  });
+
+  it.each(['js', 'ansi', 'bash', 'my-language', ''])(
+    'honors exclude on %j blocks and restores native rendering when the flag is added', async (language) => {
+      const settings = parseSettings({ languageWhitelist: [language || 'plaintext'] });
+      const source = `\`\`\`${language} title:Test cmd expand:1\nfirst\nsecond\n\`\`\``;
+      const excluded = source.replace('expand:1', 'expand:1 exclude');
+      const { renderer, context, updateSource } = fixture(excluded, settings);
+      const native = block('first\nsecond', language);
+      native.pre.classList.add('foreign-codeblock');
+      const before = native.section.innerHTML;
+      await renderer.process(native.section, context);
+      expect(native.section.innerHTML).toBe(before);
+      updateSource(source);
+      await renderer.process(native.section, context);
+      expect(native.section.querySelector('.motto-header')).not.toBeNull();
+      expect(native.section.querySelector('.motto-expand-button')).not.toBeNull();
+      updateSource(excluded);
+      await renderer.process(native.section, context);
+      renderer.refresh();
+      expect(native.section.querySelector('[class*="motto-"]')).toBeNull();
+      expect(native.pre.hidden).toBe(false);
+      expect(native.pre.classList.contains('foreign-codeblock')).toBe(true);
+      expect(native.code.firstChild).toBe(native.token);
+      expect(native.pre.querySelector('.copy-code-button')).toBe(native.copy);
+      expect(native.code.textContent).toBe('first\nsecond\n');
+    },
+  );
+
+  it.each(['sh', 'ansi'])('breaks and restores output pairing when %s gains or loses exclude', async (excluded) => {
+    const source = '```sh cmd\npwd\n```\n```ansi\n/srv\n```';
+    const { renderer, context, updateSource } = fixture(source);
+    const shell = block('pwd', 'sh');
+    const ansi = block('/srv', 'ansi');
+    const process = async () => {
+      await renderer.process(shell.section, context);
+      await renderer.process(ansi.section, context);
+    };
+    await process();
+    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(ansi.section.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
+    updateSource(source.replace(`\`\`\`${excluded}`, `\`\`\`${excluded} exclude`));
+    await process();
+    expect(shell.section.querySelector('.motto-output-toggle')).toBeNull();
+    expect(ansi.section.querySelector('.motto-command-output')).toBeNull();
+    if (excluded === 'sh') {
+      expect(shell.section.querySelector('[class*="motto-"]')).toBeNull();
+      expect(ansi.section.querySelector('.motto-ansi-standalone code')?.textContent).toBe('/srv');
+    } else {
+      expect(ansi.section.querySelector('[class*="motto-"]')).toBeNull();
+      expect(ansi.pre.hidden).toBe(false);
+      expect(shell.section.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    }
+    updateSource(source);
+    await process();
+    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(ansi.section.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
+    expect(shell.code.firstChild).toBe(shell.token);
+    expect(ansi.code.firstChild).toBe(ansi.token);
+  });
+
+  it('keeps excluded blocks in source matching when following blocks have identical content', async () => {
+    const { renderer, context } = fixture('```js exclude title:Skip\nsame\n```\n\n```js title:Keep\nsame\n```');
+    const skipped = block('same');
+    const included = block('same');
+    await renderer.process(skipped.section, context);
+    await renderer.process(included.section, context);
+    expect(skipped.section.querySelector('[class*="motto-"]')).toBeNull();
+    expect(included.section.querySelector('.motto-header-title')?.textContent).toBe('Keep');
+  });
+
+  it.each(['pwd', ''])('keeps Hippo replies for command %j across opening and cleans up on refresh and unload', async (command) => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const settings = parseSettings({
+      tapMyHippo: true, outputToggleStyles: { light: { icon: 'hippo' } },
+    });
+    const { renderer, context, updateSettings } = fixture(`\`\`\`sh\n${command}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``, settings);
+    const shell = block(command, 'sh');
+    const ansi = block('/srv', 'ansi');
+    await renderer.process(shell.section, context);
+    await renderer.process(ansi.section, context);
+    const button = shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 200, 32, 24));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(document.querySelector('.motto-hippo-speech')?.textContent).toBe('Tap my hip-po!');
+    button.click();
+    expect(document.querySelector('.motto-hippo-speech')?.textContent).toBe('You rang?');
+    expect(ansi.section.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
+    updateSettings({ ...settings, tapMyHippo: false });
+    expect(document.querySelector('.motto-hippo-speech')).toBeNull();
+    updateSettings(settings);
+    const refreshed = shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    vi.spyOn(refreshed, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 200, 32, 24));
+    refreshed.click();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(document.querySelector('.motto-hippo-speech')).not.toBeNull();
+    renderer.destroy();
+    expect(document.querySelector('.motto-hippo-speech')).toBeNull();
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(document.querySelector('.motto-hippo-speech')).toBeNull();
+    expect(shell.code.textContent).toBe(`${command}\n`);
+    expect(ansi.code.textContent).toBe('/srv\n');
+  });
+
   it.each(['js', 'ansi', 'bash', 'my-language', ''])(
     'leaves excluded %j blocks untouched and applies language changes to mounted blocks', async (language) => {
       const name = language || 'plaintext';
@@ -205,11 +438,16 @@ describe('reading mode headers', () => {
     expect(native.code.textContent).toBe(`${content}\n`);
   });
 
-  it('renders commands with native highlighting, lazy ANSI output and independent copies', async () => {
+  it.each([
+    ['user:root host:server cwd:/srv/app', 'root@server:/srv/app'],
+    ['prompt:"root@server:/srv/app"', 'root@server:/srv/app'],
+    ['prompt:"root"', 'root'],
+    ['prompt:"root@server"', 'root@server'],
+  ])('renders and copies commands with %s', async (metadata, contextText) => {
     const commands = 'pwd\nprintf \\\n  "hello"';
     const output = '\x1b[32mUNIQUE OUTPUT\x1b[0m';
     const { renderer, context, children, updateSettings } = fixture(
-      `\`\`\`sh user:root host:server cwd:/srv/app\n${commands}\n\`\`\`\n\`\`\`ansi\n${output}\n\`\`\``,
+      `\`\`\`sh ${metadata}\n${commands}\n\`\`\`\n\`\`\`ansi\n${output}\n\`\`\``,
       { ...DEFAULT_SETTINGS, showHeaderCopyButton: true },
     );
     const shell = block(commands, 'sh');
@@ -217,7 +455,7 @@ describe('reading mode headers', () => {
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
     await renderer.process(shell.section, context);
     await renderer.process(ansi.section, context);
-    expect(shell.section.querySelector('.motto-command-context')?.textContent).toBe('root@server:/srv/app');
+    expect(shell.section.querySelector('.motto-command-context')?.textContent).toBe(contextText);
     expect([...shell.section.querySelectorAll('.motto-command-prompt')].map((node) => node.textContent)).toEqual(['#', '#']);
     expect(shell.section.querySelectorAll('.motto-command-row .token')).toHaveLength(2);
     expect(shell.section.querySelector('.motto-line-number')).toBeNull();

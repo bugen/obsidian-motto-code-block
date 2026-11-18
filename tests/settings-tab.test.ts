@@ -60,6 +60,58 @@ afterEach(() => {
 });
 
 describe('header appearance settings tab', () => {
+  it('saves and resets output languages independently of language eligibility', async () => {
+    const { plugin, saved, row, change, reset } = fixture();
+    expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi');
+    change('Output languages', 'ANSI, Text\nJSON xml json');
+    await vi.waitFor(() => {
+      expect(saved[saved.length - 1]).toEqual({
+        ...DEFAULT_SETTINGS, outputLanguages: ['ansi', 'text', 'json', 'xml'],
+      });
+    });
+    change('Output languages', '');
+    await vi.waitFor(() => { expect(plugin.settings.outputLanguages).toEqual([]); });
+    reset('Output languages');
+    await vi.waitFor(() => {
+      expect(saved[saved.length - 1]).toEqual(DEFAULT_SETTINGS);
+      expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi');
+    });
+  });
+
+  it('persists command spacing and resets to Middle without changing other settings', async () => {
+    const { plugin, tab, saved, row, change, reset } = fixture();
+    plugin.settings = parseSettings({ showHeaderCopyButton: true });
+    tab.display();
+    expect(row('Command spacing').querySelector('select')?.value).toBe('middle');
+    for (const commandSpacing of ['small', 'middle', 'large']) {
+      change('Command spacing', commandSpacing);
+      await vi.waitFor(() => {
+        expect(saved[saved.length - 1]).toEqual({
+          ...DEFAULT_SETTINGS, showHeaderCopyButton: true, commandSpacing,
+        });
+      });
+    }
+    reset('Command spacing');
+    await vi.waitFor(() => {
+      expect(saved[saved.length - 1]).toEqual({ ...DEFAULT_SETTINGS, showHeaderCopyButton: true });
+      expect(row('Command spacing').querySelector('select')?.value).toBe('middle');
+    });
+  });
+
+  it('saves and resets the global Hippo speech toggle without changing icons', async () => {
+    const { plugin, saved, row, change, reset } = fixture();
+    expect(row('Tap my hip-po!').querySelector('input')?.checked).toBe(false);
+    change('Tap my hip-po!', true);
+    await vi.waitFor(() => {
+      expect(saved[saved.length - 1]).toEqual({ ...DEFAULT_SETTINGS, tapMyHippo: true });
+    });
+    reset('Tap my hip-po!');
+    await vi.waitFor(() => {
+      expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+      expect(row('Tap my hip-po!').querySelector('input')?.checked).toBe(false);
+    });
+  });
+
   it('saves normalized language lists and resets each independently', async () => {
     const { plugin, saved, row, change, reset } = fixture();
     change('Language whitelist', ' JS, javascript\nPy js\tplaintext ');

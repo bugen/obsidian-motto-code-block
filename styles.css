@@ -448,8 +448,14 @@ pre.motto-command-native,
   padding: 12px 15px;
 }
 
+.motto-command-spacing-small { --motto-command-extra-spacing: 0px; }
+.motto-command-spacing-middle { --motto-command-extra-spacing: 4px; }
+.motto-command-spacing-large { --motto-command-extra-spacing: 8px; }
+
 .motto-command-row + .motto-command-row { padding-block-start: 0; }
-.motto-command-row:has(+ .motto-command-row) { padding-block-end: 4px; }
+.motto-command-row:has(+ .motto-command-row) {
+  padding-block-end: calc(4px + var(--motto-command-extra-spacing, 4px));
+}
 
 .motto-command-prompt {
   color: var(--text-faint, var(--text-muted));
@@ -548,6 +554,64 @@ body.theme-dark .motto-output-icon-dark { display: inline-flex; }
 }
 
 .motto-output-hippo-flipped { transform: scaleX(-1); }
+
+.motto-hippo-speech {
+  position: fixed;
+  z-index: var(--layer-popover, 200);
+  width: max-content;
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 8px 12px;
+  border: none;
+  border-radius: 12px;
+  margin: 0;
+  background: var(--motto-hippo-bubble-color);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 18%);
+  color: #fff;
+  font: 500 12px/1.5 var(--font-interface);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: center;
+}
+
+.motto-hippo-speech[data-motion="enter"] {
+  animation: motto-hippo-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.motto-hippo-speech[data-motion="exit"] {
+  animation: motto-hippo-exit 100ms ease-in both;
+}
+
+@keyframes motto-hippo-enter {
+  from { opacity: 0; transform: scale(0.88); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes motto-hippo-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motto-hippo-speech[data-motion] { animation: none; }
+}
+
+.motto-hippo-speech::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: calc(var(--motto-hippo-tail-left) - 6px);
+  border: 6px solid transparent;
+  border-top-color: var(--motto-hippo-bubble-color);
+}
+
+.motto-hippo-speech[data-side="below"]::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--motto-hippo-bubble-color);
+}
 
 .motto-ansi-view,
 .motto-command-output-source {
@@ -650,6 +714,12 @@ body.theme-dark .motto-ansi-view { --motto-ansi-bright-tone: white; }
   min-height: 28px;
   padding-inline-start: calc(var(--size-4-4, 16px) + 28px);
   padding-inline-end: calc(var(--motto-command-tools-width, 36px) + var(--motto-output-toggle-extra-width, 0px));
+}
+
+.markdown-source-view.mod-cm6 .cm-content > div.cm-line.motto-command-line.motto-command-gap {
+  box-sizing: border-box;
+  min-height: calc(28px + var(--motto-command-extra-spacing, 4px));
+  padding-block-end: var(--motto-command-extra-spacing, 4px);
 }
 
 .motto-command-marker { display: inline-block; width: 0; height: 0; user-select: none; }

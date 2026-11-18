@@ -4,6 +4,48 @@ import { DEFAULT_SETTINGS, isLanguageEnabled, OUTPUT_TOGGLE_ICONS, parseSettings
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('saved settings', () => {
+  it('defaults output languages to ANSI, normalizes saved lists and preserves an empty list', () => {
+    const defaults = parseSettings({});
+    expect(defaults.outputLanguages).toEqual(['ansi']);
+    const settings = parseSettings({ outputLanguages: [' ANSI,Text ', 'JSON\nxml', 'json'] });
+    expect(settings.outputLanguages).toEqual(['ansi', 'text', 'json', 'xml']);
+    expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    expect(parseSettings({ outputLanguages: [] }).outputLanguages).toEqual([]);
+    defaults.outputLanguages.length = 0;
+    expect(parseSettings(null).outputLanguages).toEqual(['ansi']);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const outputLanguages of ['ansi,json', null, ['json', 1]]) {
+      expect(parseSettings({ outputLanguages }).outputLanguages).toEqual(['ansi']);
+    }
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"outputLanguages"'));
+  });
+
+  it('defaults command spacing to Middle, round-trips every level and reports invalid values', () => {
+    expect(parseSettings({}).commandSpacing).toBe('middle');
+    for (const commandSpacing of ['small', 'middle', 'large']) {
+      const settings = parseSettings({ commandSpacing });
+      expect(settings.commandSpacing).toBe(commandSpacing);
+      expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const commandSpacing of ['wide', 4, null]) {
+      expect(parseSettings({ commandSpacing }).commandSpacing).toBe('middle');
+    }
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"commandSpacing"'));
+  });
+
+  it('keeps Hippo speech opt-in, round-trips the choice and reports invalid values', () => {
+    expect(parseSettings({}).tapMyHippo).toBe(false);
+    for (const tapMyHippo of [true, false]) {
+      const settings = parseSettings({ tapMyHippo });
+      expect(settings.tapMyHippo).toBe(tapMyHippo);
+      expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSettings({ tapMyHippo: 'true' }).tapMyHippo).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"tapMyHippo"'));
+  });
+
   it('normalizes and round-trips language lists with blacklist precedence and exact alias matching', () => {
     const settings = parseSettings({
       languageWhitelist: [' JS ', 'javascript', 'PY', 'js', ' plaintext '],

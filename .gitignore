@@ -2,6 +2,7 @@
 .local/
 /mockups/
 /DRAFT.md
+*.draft.md
 
 # Local environment, logs and editor/OS temporary files
 .env

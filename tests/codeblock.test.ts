@@ -4,6 +4,100 @@ import { splitCommands } from '../src/commands';
 import { isLanguageEnabled, parseSettings } from '../src/settings';
 
 describe('command blocks', () => {
+  it.each(['text', 'json', 'xml'])('pairs %s only when configured and both adjacent blocks are eligible', (language) => {
+    const source = `\`\`\`sh\ncat result\n\`\`\`\n\`\`\`${language}\nresult\n\`\`\``;
+    expect(parseCodeBlocks(source).blocks[0]?.terminal).toBeUndefined();
+    const settings = parseSettings({ outputLanguages: ['ansi', language.toUpperCase()] });
+    const parse = (text: string, configuration = settings) =>
+      parseCodeBlocks(text, (name) => isLanguageEnabled(name, configuration), configuration.outputLanguages);
+    const { blocks } = parse(source);
+    expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
+    expect(blocks[1]?.commandFrom).toBe(blocks[0]?.from);
+    for (const text of [
+      source.replace('```\n```', '```\n\n```'),
+      source.replace('```sh', '```sh exclude'),
+      source.replace(`\`\`\`${language}`, `\`\`\`${language} exclude`),
+      source.replace('```sh', '```js cmd'),
+    ]) expect(parse(text).blocks[1]?.commandFrom).toBeUndefined();
+    for (const configuration of [
+      { ...settings, outputLanguages: [] },
+      { ...settings, languageBlacklist: [language] },
+      { ...settings, languageWhitelist: ['sh'] },
+    ]) expect(parse(source, configuration).blocks[0]?.terminal).toBeUndefined();
+  });
+
+  it('matches output language aliases independently and uses plaintext for unlabelled output', () => {
+    const source = '```sh\npwd\n```\n```txt\n/work\n```';
+    expect(parseCodeBlocks(source, () => true, ['text']).blocks[0]?.terminal).toBeUndefined();
+    expect(parseCodeBlocks(source, () => true, ['txt']).blocks[0]?.terminal?.output).toBeDefined();
+    const unlabelled = source.replace('```txt', '```');
+    expect(parseCodeBlocks(unlabelled, () => true, ['plaintext']).blocks[0]?.terminal?.output).toBeDefined();
+  });
+
+  it('does not let a shell claimed as output also consume a subsequent output block', () => {
+    const source = '```sh\nfirst\n```\n```bash\nsecond\n```\n```json\n{}\n```';
+    const { blocks } = parseCodeBlocks(source, () => true, ['bash', 'json']);
+    expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
+    expect(blocks[1]?.terminal?.output).toBeUndefined();
+    expect(blocks[2]?.commandFrom).toBeUndefined();
+  });
+
+  it.each(['sh', 'bash', 'zsh', 'csh', 'fish'])('recognizes explicit command flags for %s without metadata or output', (language) => {
+    for (const flag of ['cmd', 'COMMAND']) {
+      const { blocks, diagnostics } = parseCodeBlocks(`\`\`\`${language} ${flag}\npwd\n\`\`\``);
+      expect(blocks[0]?.terminal).toEqual({});
+      expect(blocks[0]?.text).toBe('pwd');
+      expect(diagnostics).toEqual([]);
+    }
+  });
+
+  it.each(['js', 'python', 'ansi', 'shell', 'cmd', 'command'])('does not activate commands for unsupported %s', (language) => {
+    for (const flag of ['cmd', 'command']) {
+      expect(parseCodeBlocks(`\`\`\`${language} ${flag}\nrun()\n\`\`\``).blocks[0]?.terminal).toBeUndefined();
+    }
+  });
+
+  it.each(['cmd', 'command'])('keeps a leading %s as the language rather than a flag', (language) => {
+    const block = parseCodeBlocks(`\`\`\`${language}\npwd\n\`\`\``).blocks[0]!;
+    expect(block.language).toBe(language);
+    expect(block.terminal).toBeUndefined();
+  });
+
+  it('only recognizes standalone flags, not parameter values or parts of other names', () => {
+    const info = parseInfo('sh title:"cmd command exclude" custom:cmd custom:exclude cmd-extra command-extra exclude-extra');
+    expect(info.context).toBeUndefined();
+    expect(info.exclude).toBeUndefined();
+    expect(info.diagnostics).toEqual([]);
+    const valued = parseInfo('sh cmd:true command=false exclude:false');
+    expect(valued.context).toBeUndefined();
+    expect(valued.exclude).toBeUndefined();
+    expect(valued.diagnostics).toEqual([
+      'The "cmd" option does not take a value.',
+      'The "command" option does not take a value.',
+      'The "exclude" option does not take a value.',
+    ]);
+  });
+
+  it.each(['exclude cmd', 'command EXCLUDE'])('prioritizes %s over metadata and diagnostics', (flags) => {
+    const result = parseCodeBlocks(`\`\`\`bash ${flags} user:root expand:0\npwd\n\`\`\``);
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0]?.terminal).toBeUndefined();
+    expect(result.blocks[0]?.exclude).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(parseInfo('exclude')).toMatchObject({ language: '', exclude: true });
+  });
+
+  it.each(['sh', 'ansi'])('does not pair a flag-excluded %s fence with its adjacent block', (excluded) => {
+    const result = parseCodeBlocks(
+      `\`\`\`sh cmd user:root${excluded === 'sh' ? ' exclude' : ''}\npwd\n\`\`\`\n` +
+      `\`\`\`ansi expand:0${excluded === 'ansi' ? ' exclude' : ''}\n/srv\n\`\`\``,
+    );
+    expect(result.blocks).toHaveLength(2);
+    expect(result.blocks[0]?.terminal).toEqual(excluded === 'sh' ? undefined : { user: 'root' });
+    expect(result.blocks[1]?.commandFrom).toBeUndefined();
+    expect(result.diagnostics).toHaveLength(excluded === 'ansi' ? 0 : 1);
+  });
+
   it.each(['sh', 'ansi'])('does not pair excluded %s fences or diagnose their parameters', (excluded) => {
     const settings = parseSettings({ languageBlacklist: [excluded] });
     const source = '```sh title:Command\npwd\n```\n```ansi expand:0\nout\n```';
@@ -32,6 +126,49 @@ describe('command blocks', () => {
     expect(parseCodeBlocks('```js user:root\nrun()\n```').blocks[0]?.terminal).toBeUndefined();
     expect(parseCodeBlocks('```sh pwd:"/work tree"\npwd\n```').blocks[0]?.terminal).toEqual({ cwd: '/work tree' });
     expect(parseCodeBlocks('```sh user:""\npwd\n```').blocks[0]?.terminal).toEqual({ user: '' });
+    expect(parseCodeBlocks('```js prompt:"root@server:/work"\nrun()\n```').blocks[0]?.terminal).toBeUndefined();
+  });
+
+  it.each([
+    ['sh prompt="root"', { user: 'root' }],
+    ['bash PROMPT:sato@localhost', { user: 'sato', host: 'localhost' }],
+    ['sh prompt="sato@localhost:/home/sato"', { user: 'sato', host: 'localhost', cwd: '/home/sato' }],
+    ["bash PROMPT:'root@server:/work tree'", { user: 'root', host: 'server', cwd: '/work tree' }],
+    ['fish prompt:sato@localhost:~/work:a@b', { user: 'sato', host: 'localhost', cwd: '~/work:a@b' }],
+    ['zsh prompt:"@server:"', { user: '', host: 'server', cwd: '' }],
+  ])('expands %s into individual execution metadata', (info, context) => {
+    expect(parseInfo(info)).toMatchObject({ context, diagnostics: [] });
+    expect(parseCodeBlocks(`\`\`\`${info}\npwd\n\`\`\``).blocks[0]?.terminal).toEqual(context);
+  });
+
+  it.each([
+    ['user:admin', { user: 'admin' }],
+    ['host:other', { host: 'other' }],
+    ['cwd:/other', { cwd: '/other' }],
+    ['directory:""', { cwd: '' }],
+    ['dir:/other', { cwd: '/other' }],
+    ['wd:/other', { cwd: '/other' }],
+    ['pwd:/other', { cwd: '/other' }],
+  ])('ignores the entire prompt when %s is also specified, regardless of order', (option, context) => {
+    for (const prompt of ['prompt:root', 'prompt:root@server', 'prompt:"root@server:/srv/app"']) {
+      for (const options of [`${prompt} ${option}`, `${option} ${prompt}`]) {
+        const info = parseInfo(`sh ${options}`);
+        expect(info.context).toEqual(context);
+        expect(info.diagnostics).toEqual([]);
+      }
+    }
+    expect(parseInfo(`sh prompt:invalid:prompt ${option}`)).toMatchObject({ context, diagnostics: [] });
+  });
+
+  it.each(['', 'user@@host', 'host:/work'])('reports malformed prompt %j without activating a command', (prompt) => {
+    const info = `sh title:Command prompt:"${prompt}"`;
+    const result = parseCodeBlocks(`Intro\n\n\`\`\`${info}\npwd\n\`\`\``);
+    expect(parseInfo(info).context).toBeUndefined();
+    expect(result.blocks[0]?.terminal).toBeUndefined();
+    expect(result.blocks[0]?.title).toBe('Command');
+    expect(result.diagnostics).toEqual([{
+      line: 2, message: 'Invalid "prompt" option. Use "user", "user@host", or "user@host:cwd".',
+    }]);
   });
 
   it.each(['sh', 'bash', 'zsh', 'csh', 'fish'])('pairs adjacent %s and ANSI blocks with a shared output', (language) => {
@@ -76,7 +213,7 @@ describe('header options', () => {
     ['title:"No language"', '', 'No language'],
     ['json', 'json', ''],
     ['', '', ''],
-    ['sh prompt:"user title:ignored" title:"Real title"', 'sh', 'Real title'],
+    ['sh prompt:"user@host:/work title:ignored" title:"Real title"', 'sh', 'Real title'],
     ['py title:"Say \\"Hello\\"" ignored', 'py', 'Say "Hello"'],
     ['text file:C:\\work\\notes.txt', 'text', 'C:\\work\\notes.txt'],
   ])('parses %s', (source, language, title) => {
@@ -85,10 +222,19 @@ describe('header options', () => {
 
   it.each([
     ['', false], ['js', false], ['  js \t ', false],
+    ['bash cmd', false], ['sh command', false], ['sh CmD COMMAND cmd \t ', false],
+    ['js cmd command', false], ['sh cmd title:""', true], ['sh title:"cmd command" cmd', true],
+    ['sh cmd fold', true], ['sh custom command', false], ['sh cmd:true', false],
     ['js title:""', true], ['file:""', true], ['js fold', true],
     ['js expand', true], ['unfold:3', true], ['js header-style:note', true],
-    ['js custom:value', true],
-  ])('tracks explicit parameters independently of their values in %j', (info, hasParameters) => {
+    ['sh user:root', true], ['sh HOST=server', true], ['sh prompt:"user@host"', true],
+    ['sh cwd:/work', true], ['sh directory:/work', true], ['sh dir:/work', true],
+    ['sh wd:/work', true], ['sh pwd:/work', true],
+    ['js arbitrary words', false], ['js custom:value', false], ['custom:value', false],
+    ['js custom="title:Run user:root fold"', false], ['js title user host', false],
+    ['js title-extra:Example header-style-extra:note', false],
+    ['js arbitrary custom:value title:Run', true],
+  ])('counts only supported header parameters in %j', (info, hasParameters) => {
     expect(parseInfo(info).hasParameters).toBe(hasParameters);
     expect(parseCodeBlocks(`\`\`\`${info}\nrun()\n\`\`\``).blocks[0]?.hasParameters).toBe(hasParameters);
   });
@@ -96,6 +242,7 @@ describe('header options', () => {
   it('reports an unfinished quoted option without inventing a title', () => {
     const result = parseInfo('js title:"unfinished');
     expect(result.title).toBe('');
+    expect(result.hasParameters).toBe(true);
     expect(result.diagnostics).toEqual(['Unclosed quote in "title" option.']);
   });
 

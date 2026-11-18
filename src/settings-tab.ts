@@ -1,7 +1,7 @@
 import { Notice, PluginSettingTab, Setting, type App, type ExtraButtonComponent } from 'obsidian';
 import type MottoCodeblockPlugin from './main';
 import {
-  COLOR_MODES, DEFAULT_SETTINGS, FOLD_STATES, HEADER_BACKGROUNDS, HEADER_DISPLAY_MODES,
+  COLOR_MODES, COMMAND_SPACING_MODES, DEFAULT_SETTINGS, FOLD_STATES, HEADER_BACKGROUNDS, HEADER_DISPLAY_MODES,
   ICON_SIZES, LANGUAGE_LABEL_STYLES, LINE_NUMBER_MODES, OUTPUT_TOGGLE_ICONS,
   isChoice, isPositiveInteger, normalizeLanguageList,
   type ColorMode, type HeaderStyleSettings, type MottoSettings, type OutputToggleStyleSettings,
@@ -24,9 +24,23 @@ export class MottoSettingsTab extends PluginSettingTab {
       'Enhance only these fence names. Separate with commas, spaces or new lines; case-insensitive, exact names only. Aliases are separate entries. Use plaintext for unlabelled blocks. Empty disables all enhancements.');
     this.addLanguageList('languageBlacklist', 'Language blacklist',
       'Never enhance these fence names, even when whitelisted. Same format as the whitelist. Mermaid is excluded by default to preserve native rendering.');
-    this.addToggle('commandBlocks', 'Command blocks', 'Enhance shell blocks with execution metadata or an immediately following ANSI output block.');
+    this.addToggle('commandBlocks', 'Command blocks', 'Enhance supported shell blocks marked cmd/command, containing execution metadata, or immediately followed by a configured output block.');
+    this.addLanguageList('outputLanguages', 'Output languages',
+      'Fence languages treated as command output when immediately after a supported shell block. Default: ansi. Add text, json or xml as needed. Separate with commas, spaces or new lines; case-insensitive, exact names only. Use plaintext for unlabelled blocks. Language eligibility and exclude still apply. Empty disables output pairing.');
+    new Setting(this.containerEl).setName('Command spacing')
+      .setDesc('Vertical spacing between commands in the same block. Small keeps the original spacing; Middle is the default. Continued lines are unchanged.')
+      .addDropdown((dropdown) => {
+        dropdown.addOptions({ small: 'Small', middle: 'Middle', large: 'Large' })
+          .setValue(this.motto.settings.commandSpacing).onChange(async (value) => {
+            if (!isChoice(value, COMMAND_SPACING_MODES)) return this.invalidChoice();
+            await this.save((settings) => ({ ...settings, commandSpacing: value }));
+          });
+      }).addExtraButton(this.resetButton(() =>
+        this.save((settings) => ({ ...settings, commandSpacing: DEFAULT_SETTINGS.commandSpacing }), true)));
+    this.addToggle('tapMyHippo', 'Tap my hip-po!',
+      'Occasionally show a playful speech bubble when the active output icon is Hippo and its output is closed. Click the icon while the bubble is visible for a reply. Applies to both color modes.');
     new Setting(this.containerEl).setName('Header display')
-      .setDesc('Default: show only when parameters are specified. Always: show for every block. None: hide.')
+      .setDesc('Default: show only for supported parameters, such as title, user, host or fold. Command flags and unknown options do not count. Always: show for every block. None: hide.')
       .addDropdown((dropdown) => {
         dropdown.addOptions({ default: 'Default', always: 'Always', none: 'None' })
           .setValue(this.motto.settings.headerDisplay).onChange(async (value) => {
@@ -97,7 +111,7 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private addLanguageList(
-    key: 'languageWhitelist' | 'languageBlacklist', name: string, description: string,
+    key: 'languageWhitelist' | 'languageBlacklist' | 'outputLanguages', name: string, description: string,
   ): void {
     new Setting(this.containerEl).setName(name).setDesc(description).addTextArea((text) => {
       text.inputEl.rows = key === 'languageWhitelist' ? 6 : 3;
@@ -149,7 +163,7 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private addToggle(
-    key: 'commandBlocks' | 'showIcon' | 'showLanguage' | 'showHeaderCopyButton',
+    key: 'commandBlocks' | 'tapMyHippo' | 'showIcon' | 'showLanguage' | 'showHeaderCopyButton',
     name: string,
     description: string,
   ): void {

@@ -8,6 +8,7 @@ import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line
 import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
 import { splitCommands } from './commands';
 import { ansiPreview, commandOutputPreview, commandTools, setOutputToggle } from './command-render';
+import { destroyHippoSpeech } from './hippo-speech';
 
 interface HeaderState {
   livePreview: boolean;
@@ -116,10 +117,11 @@ class CommandWidget extends WidgetType {
   readonly output: boolean;
   readonly open: boolean;
   readonly styles: MottoSettings['outputToggleStyles'];
+  readonly tapMyHippo: boolean;
 
   constructor(
     from: number, text: string | null, prompt: string, output: boolean, open: boolean,
-    styles: MottoSettings['outputToggleStyles'],
+    styles: MottoSettings['outputToggleStyles'], tapMyHippo: boolean,
   ) {
     super();
     this.from = from;
@@ -128,6 +130,7 @@ class CommandWidget extends WidgetType {
     this.output = output;
     this.open = open;
     this.styles = styles;
+    this.tapMyHippo = tapMyHippo;
   }
 
   private sameContent(other: CommandWidget): boolean {
@@ -136,13 +139,14 @@ class CommandWidget extends WidgetType {
   }
 
   override eq(other: CommandWidget): boolean {
-    return this.sameContent(other) && this.open === other.open && this.styles === other.styles;
+    return this.sameContent(other) && this.open === other.open && this.styles === other.styles &&
+      this.tapMyHippo === other.tapMyHippo;
   }
 
   override updateDOM(marker: HTMLElement, _view: EditorView, previous: CommandWidget): boolean {
     if (!this.sameContent(previous)) return false;
     const button = marker.querySelector<HTMLButtonElement>('.motto-output-toggle');
-    if (button) setOutputToggle(button, this.open, this.styles);
+    if (button) setOutputToggle(button, this.open, this.styles, this.tapMyHippo);
     return true;
   }
 
@@ -160,8 +164,12 @@ class CommandWidget extends WidgetType {
     }
     marker.append(commandTools(document, this.text, this.open, this.styles, this.output ? () => {
       view.dispatch({ effects: changeOutput.of({ from: this.from, action: 'toggle' }), selection: { anchor: this.from } });
-    } : undefined));
+    } : undefined, this.tapMyHippo));
     return marker;
+  }
+
+  override destroy(marker: HTMLElement): void {
+    destroyHippoSpeech(marker);
   }
 }
 
@@ -180,6 +188,7 @@ class OutputWidget extends WidgetType {
 
   override eq(other: OutputWidget): boolean {
     return this.commandFrom === other.commandFrom && this.block.from === other.block.from &&
+      this.block.language === other.block.language &&
       this.block.startLine === other.block.startLine && this.block.text === other.block.text &&
       this.block.lineCount === other.block.lineCount && this.preview === other.preview;
   }
@@ -191,7 +200,7 @@ class OutputWidget extends WidgetType {
         selection: { anchor: this.commandFrom },
       });
       view.focus();
-    }, () => { editAnsi(view, this.block); });
+    }, () => { editOutput(view, this.block); });
     OutputWidget.previews.set(preview.element, preview);
     return preview.element;
   }
@@ -223,7 +232,7 @@ class AnsiWidget extends WidgetType {
 
   override toDOM(view: EditorView): HTMLElement {
     const preview = ansiPreview(view.dom.ownerDocument, this.block, this.settings, this.preview,
-      () => { editAnsi(view, this.block, this.preview !== undefined); });
+      () => { editOutput(view, this.block, this.preview !== undefined); });
     AnsiWidget.previews.set(preview.element, preview);
     return preview.element;
   }
@@ -239,7 +248,7 @@ function bodyStart(block: CodeBlock, state: EditorState): number {
   return line <= state.doc.lines ? state.doc.line(line).from : block.to;
 }
 
-function editAnsi(view: EditorView, block: CodeBlock, expand = false): void {
+function editOutput(view: EditorView, block: CodeBlock, expand = false): void {
   view.dispatch({
     selection: { anchor: bodyStart(block, view.state) },
     effects: expand ? toggleFold.of(block.from) : [],
@@ -358,17 +367,24 @@ function decorate(
       }
       for (const [index, command] of commands.entries()) {
         if (command.startLine >= count) continue;
+        const next = commands[index + 1];
+        if (settings.commandSpacing !== 'small' && next && next.startLine < count) {
+          decorations.push(Decoration.line({
+            class: `motto-command-gap motto-command-spacing-${settings.commandSpacing}`,
+          }).range(state.doc.line(block.startLine + command.endLine + 2).from));
+        }
         decorations.push(Decoration.widget({
           widget: new CommandWidget(block.from, block.text.slice(command.from, command.to),
             block.terminal.user === 'root' ? '#' : '$',
             output !== undefined && index === commands.length - 1 && command.endLine < count, open,
-            settings.outputToggleStyles),
+            settings.outputToggleStyles, settings.tapMyHippo),
           side: -1,
         }).range(state.doc.line(block.startLine + command.startLine + 2).from));
       }
       if (output) {
         if (commands.length === 0) decorations.push(Decoration.widget({
-          widget: new CommandWidget(block.from, null, '', true, open, settings.outputToggleStyles), block: true, side: -1,
+          widget: new CommandWidget(block.from, null, '', true, open, settings.outputToggleStyles, settings.tapMyHippo),
+          block: true, side: -1,
         }).range(output.from));
         if (!open || preview !== undefined) {
           decorations.push(Decoration.replace({ block: true }).range(output.from, output.to));
@@ -402,9 +418,9 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
   function readBlocks(livePreview: boolean, source: string): CodeBlock[] {
     if (!livePreview) return [];
     const settings = getSettings();
-    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings));
+    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings), settings.outputLanguages);
     reportDiagnostics(result.diagnostics, 'editor');
-    return result.blocks.filter((block) => isLanguageEnabled(block.language, settings));
+    return result.blocks.filter((block) => !block.exclude && isLanguageEnabled(block.language, settings));
   }
   const field = StateField.define<HeaderState>({
     create(state) {

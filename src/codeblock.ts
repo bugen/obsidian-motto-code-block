@@ -20,6 +20,7 @@ export interface CodeBlock {
   language: string;
   title: string;
   hasParameters: boolean;
+  exclude?: boolean;
   terminal?: TerminalBlock;
   commandFrom?: number;
   headerStyle?: string;
@@ -29,6 +30,11 @@ export interface CodeBlock {
 }
 
 const foldOptions = new Map([['fold', true], ['expand', false], ['unfold', false]]);
+const valueOptions = new Map([
+  ['title', 'title'], ['file', 'file'], ['header-style', 'header-style'], ['prompt', 'prompt'],
+  ['user', 'user'], ['host', 'host'], ['cwd', 'cwd'],
+  ['directory', 'cwd'], ['dir', 'cwd'], ['wd', 'cwd'], ['pwd', 'cwd'],
+]);
 
 export interface Diagnostic {
   line: number;
@@ -37,17 +43,21 @@ export interface Diagnostic {
 
 export function parseInfo(info: string): {
   language: string; title: string; hasParameters: boolean;
+  exclude?: boolean;
   context?: TerminalContext;
   headerStyle?: string; fold?: boolean; previewLines?: number; diagnostics: string[];
 } {
   const languageMatch = /^([^\s:=]+)(?=\s|$)/.exec(info.trimStart());
   const firstToken = languageMatch?.[1]?.toLowerCase() ?? '';
-  const language = foldOptions.has(firstToken) ? '' : firstToken;
+  const language = foldOptions.has(firstToken) || firstToken === 'exclude' ? '' : firstToken;
   const options = info.trimStart().slice(language ? languageMatch?.[0].length ?? 0 : 0);
   const values = new Map<string, string>();
   const diagnostics: string[] = [];
+  let hasParameters = false;
   let fold: boolean | undefined;
   let previewLines: number | undefined;
+  let command = false;
+  let exclude = false;
   let index = 0;
   while (index < options.length) {
     while (/\s/.test(options[index] ?? '') && index < options.length) index++;
@@ -55,11 +65,15 @@ export function parseInfo(info: string): {
     while (index < options.length && !/[\s:=]/.test(options[index]!)) index++;
     const key = options.slice(start, index).toLowerCase();
     while (index < options.length && /\s/.test(options[index]!)) index++;
-    if (options[index] !== ':' && options[index] !== '=') {
+    const hasValue = options[index] === ':' || options[index] === '=';
+    const valueKey = valueOptions.get(key);
+    if (foldOptions.has(key) || (hasValue && valueKey !== undefined)) hasParameters = true;
+    if (!hasValue) {
       if (foldOptions.has(key)) {
         fold = foldOptions.get(key);
         previewLines = undefined;
-      }
+      } else if (key === 'cmd' || key === 'command') command = true;
+      else if (key === 'exclude') exclude = true;
       continue;
     }
     index++;
@@ -84,16 +98,16 @@ export function parseInfo(info: string): {
       while (index < options.length && !/\s/.test(options[index]!)) index++;
       value = options.slice(valueStart, index);
     }
-    if (key === 'file' || key === 'title' || key === 'header-style') values.set(key, value);
-    if (key === 'user' || key === 'host') values.set(key, value);
-    if (['cwd', 'directory', 'dir', 'wd', 'pwd'].includes(key)) values.set('cwd', value);
+    if (valueKey !== undefined) values.set(valueKey, value);
     if (key === 'expand' || key === 'unfold') {
       const count = Number(value);
       if (/^\d+$/.test(value) && Number.isSafeInteger(count) && count > 0) {
         fold = false;
         previewLines = count;
       } else diagnostics.push(`Invalid "${key}" line count. Use a positive whole number.`);
-    } else if (key === 'fold') diagnostics.push('The "fold" option does not take a value.');
+    } else if (key === 'fold' || key === 'cmd' || key === 'command' || key === 'exclude') {
+      diagnostics.push(`The "${key}" option does not take a value.`);
+    }
   }
   const headerStyle = values.get('header-style')?.toLowerCase();
   const validStyle = headerStyle !== undefined && /^[a-z0-9_-]+$/.test(headerStyle);
@@ -105,11 +119,21 @@ export function parseInfo(info: string): {
     const value = values.get(key);
     if (value !== undefined) context[key] = value;
   }
+  const prompt = values.get('prompt');
+  if (prompt !== undefined && Object.keys(context).length === 0) {
+    const parts = /^([^@:]*)(?:@([^@:]*)(?::(.*))?)?$/.exec(prompt);
+    if (parts && prompt.length > 0) {
+      context.user = parts[1]!;
+      if (parts[2] !== undefined) context.host = parts[2];
+      if (parts[3] !== undefined) context.cwd = parts[3];
+    } else diagnostics.push('Invalid "prompt" option. Use "user", "user@host", or "user@host:cwd".');
+  }
   return {
     language,
     title: values.get('file') || values.get('title') || '',
-    hasParameters: options.trim().length > 0,
-    ...(Object.keys(context).length ? { context } : {}),
+    hasParameters,
+    ...(exclude ? { exclude: true } : {}),
+    ...(command || Object.keys(context).length ? { context } : {}),
     ...(validStyle ? { headerStyle } : {}),
     ...(fold !== undefined ? { fold } : {}),
     ...(previewLines !== undefined ? { previewLines } : {}),
@@ -139,6 +163,7 @@ function lineAt(starts: number[], position: number): number {
 
 export function parseCodeBlocks(
   source: string, isEnabled: (language: string) => boolean = () => true,
+  outputLanguages: readonly string[] = ['ansi'],
 ): { blocks: CodeBlock[]; diagnostics: Diagnostic[] } {
   const starts = [0];
   for (let index = 0; index < source.length; index++) {
@@ -156,8 +181,8 @@ export function parseCodeBlocks(
       const info = parseInfo(infoNode ? source.slice(base + infoNode.from, base + infoNode.to) : '');
       const startLine = lineAt(starts, base + node.from);
       const endLine = lineAt(starts, base + node.to);
-      // Keep every fence for native-DOM matching, but only diagnose and pair enabled languages.
-      if (isEnabled(info.language)) {
+      // Keep every fence for native-DOM matching, but only diagnose and pair eligible blocks.
+      if (!info.exclude && isEnabled(info.language)) {
         for (const message of info.diagnostics) diagnostics.push({ line: startLine, message });
       }
       blocks.push({
@@ -169,7 +194,8 @@ export function parseCodeBlocks(
         language: info.language,
         title: info.title,
         hasParameters: info.hasParameters,
-        ...(isShell(info.language) && info.context ? { terminal: { ...info.context } } : {}),
+        ...(info.exclude ? { exclude: true } : {}),
+        ...(!info.exclude && isShell(info.language) && info.context ? { terminal: { ...info.context } } : {}),
         ...(info.headerStyle !== undefined ? { headerStyle: info.headerStyle } : {}),
         ...(info.fold !== undefined ? { fold: info.fold } : {}),
         ...(info.previewLines !== undefined ? { previewLines: info.previewLines } : {}),
@@ -191,7 +217,9 @@ export function parseCodeBlocks(
   for (let index = 0; index + 1 < blocks.length; index++) {
     const command = blocks[index]!;
     const output = blocks[index + 1]!;
-    if (!isShell(command.language) || output.language !== 'ansi' || !adjacent.has(command.from) ||
+    if (command.exclude || output.exclude || command.commandFrom !== undefined ||
+        !isShell(command.language) || !outputLanguages.includes(output.language || 'plaintext') ||
+        !adjacent.has(command.from) ||
         !isEnabled(command.language) || !isEnabled(output.language)) continue;
     command.terminal ??= {};
     command.terminal.output = output;

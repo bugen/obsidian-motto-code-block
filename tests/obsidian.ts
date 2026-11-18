@@ -37,6 +37,18 @@ export function setIcon(element: HTMLElement, icon: string): void {
   element.replaceChildren(svg);
 }
 
+export async function loadPrism(): Promise<{ highlightElement(element: HTMLElement): void }> {
+  return {
+    highlightElement(element) {
+      if (/\blanguage-(text|txt|plaintext)\b/.test(element.className)) return;
+      const token = element.ownerDocument.createElement('span');
+      token.className = 'token string';
+      token.textContent = element.textContent;
+      element.replaceChildren(token);
+    },
+  };
+}
+
 export class App {}
 export class Plugin {}
 export class TFile {}
