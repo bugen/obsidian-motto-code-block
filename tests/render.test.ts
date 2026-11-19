@@ -43,6 +43,34 @@ describe('header display', () => {
     expect(output.querySelector('code')?.textContent).toBe('{"ok":true}');
   });
 
+  it('reports an invalid Prism API while retaining the original output text', async () => {
+    vi.spyOn(obsidian, 'loadPrism').mockResolvedValueOnce({ highlightElement: undefined });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const output = commandOutput(document, '{"ok":true}', undefined, 'json');
+    await vi.waitFor(() => {
+      expect(log).toHaveBeenCalledWith(
+        '[Motto Code Block] Failed to highlight output.', new Error('Prism highlighting is unavailable.'),
+      );
+    });
+    expect(Notice.messages).toContain('Motto Code Block: Failed to highlight output.');
+    expect(output.querySelector('code')?.textContent).toBe('{"ok":true}');
+  });
+
+  it('creates detached controls and output in the supplied document', () => {
+    const otherDocument = document.implementation.createHTMLDocument();
+    const header = createHeader(otherDocument, { language: 'sh', title: 'Run', text: 'pwd', hasParameters: true }, {
+      ...DEFAULT_SETTINGS, showHeaderCopyButton: true,
+    }, { state: 'expanded', toggle: vi.fn() })!;
+    const tools = commandTools(otherDocument, 'pwd', true, DEFAULT_SETTINGS.outputToggleStyles, vi.fn());
+    const output = commandOutput(otherDocument, '\x1b[1moutput', vi.fn());
+    for (const root of [header, tools, output]) {
+      expect(root.ownerDocument).toBe(otherDocument);
+      expect(root.isConnected).toBe(false);
+      expect([...root.querySelectorAll('*')].every((child) => child.ownerDocument === otherDocument)).toBe(true);
+    }
+    expect(otherDocument.body.childElementCount).toBe(0);
+  });
+
   it.each(['markdown-rendered', 'markdown-source-view'])('aligns command and output copy controls on the same vertical axis in %s', (context) => {
     const stylesheet = document.createElement('style');
     stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');

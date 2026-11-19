@@ -464,6 +464,9 @@ body.theme-dark .motto-command-header {
   width: var(--motto-header-icon-size);
   height: var(--motto-header-icon-size);
   background: var(--motto-terminal-color);
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
@@ -633,6 +636,9 @@ body.theme-dark .motto-output-icon-dark { display: inline-flex; }
   width: 27px;
   height: 18px;
   background: currentColor;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
@@ -737,6 +743,14 @@ body.theme-dark .motto-command-output-source { --motto-output-darken: 5%; }
   font-size: var(--code-size, 13px);
   line-height: var(--line-height-normal, 1.5);
 }
+
+.motto-ansi-view .motto-ansi-bold { font-weight: bold; }
+.motto-ansi-view .motto-ansi-dim { opacity: 0.5; }
+.motto-ansi-view .motto-ansi-italic { font-style: italic; }
+.motto-ansi-view .motto-ansi-hidden { visibility: hidden; }
+.motto-ansi-view .motto-ansi-underline { text-decoration-line: underline; }
+.motto-ansi-view .motto-ansi-strikethrough { text-decoration-line: line-through; }
+.motto-ansi-view .motto-ansi-underline.motto-ansi-strikethrough { text-decoration-line: underline line-through; }
 
 .motto-command-output {
   border-top: 1px solid var(--background-modifier-border);

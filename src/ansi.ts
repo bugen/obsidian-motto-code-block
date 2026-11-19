@@ -31,7 +31,7 @@ export function renderAnsi(document: Document, text: string): DocumentFragment {
     // Parse SGR chunks directly so reverse video can use the theme's defaults.
     const entry = parser.processChunkJson(index === 0 ? `0m${part}` : part, { use_classes: true }, true);
     if (!entry.content) continue;
-    const span = document.createElement('span');
+    const span = fragment.createSpan();
     span.textContent = entry.content;
     const foreground = entry.fg ? ansiColor(entry.fg, entry.fg_truecolor) : undefined;
     const background = entry.bg ? ansiColor(entry.bg, entry.bg_truecolor) : undefined;
@@ -42,15 +42,9 @@ export function renderAnsi(document: Document, text: string): DocumentFragment {
       if (foreground) span.style.color = foreground;
       if (background) span.style.backgroundColor = background;
     }
-    if (entry.decorations.includes('bold')) span.style.fontWeight = 'bold';
-    if (entry.decorations.includes('dim')) span.style.opacity = '0.5';
-    if (entry.decorations.includes('italic')) span.style.fontStyle = 'italic';
-    if (entry.decorations.includes('hidden')) span.style.visibility = 'hidden';
-    span.style.textDecorationLine = [
-      ...(entry.decorations.includes('underline') ? ['underline'] : []),
-      ...(entry.decorations.includes('strikethrough') ? ['line-through'] : []),
-    ].join(' ');
-    fragment.append(span);
+    for (const decoration of ['bold', 'dim', 'italic', 'hidden', 'underline', 'strikethrough'] as const) {
+      if (entry.decorations.includes(decoration)) span.classList.add(`motto-ansi-${decoration}`);
+    }
   }
   return fragment;
 }

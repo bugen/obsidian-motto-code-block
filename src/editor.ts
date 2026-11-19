@@ -156,11 +156,10 @@ class CommandWidget extends WidgetType {
     marker.className = this.text === null ? 'motto-command-empty-tools' : 'motto-command-marker';
     marker.contentEditable = 'false';
     if (this.text !== null) {
-      const prompt = document.createElement('span');
+      const prompt = marker.createSpan();
       prompt.className = 'motto-command-prompt';
       prompt.setAttribute('aria-hidden', 'true');
       prompt.textContent = this.prompt;
-      marker.append(prompt);
     }
     marker.append(commandTools(document, this.text, this.open, this.styles, this.output ? () => {
       view.dispatch({ effects: changeOutput.of({ from: this.from, action: 'toggle' }), selection: { anchor: this.from } });

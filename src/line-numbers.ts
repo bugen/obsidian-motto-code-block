@@ -58,7 +58,7 @@ export class ReadingCodeLayout {
     this.code = code;
     this.count = count;
     this.previewLines = previewLines;
-    this.gutter = numbered ? pre.ownerDocument.createElement('span') : null;
+    this.gutter = numbered ? pre.createSpan() : null;
     if (this.gutter) {
       this.gutter.className = 'motto-line-numbers';
       this.gutter.setAttribute('aria-hidden', 'true');
@@ -67,7 +67,6 @@ export class ReadingCodeLayout {
       }
       pre.classList.add('motto-numbered-codeblock');
       pre.style.setProperty('--motto-line-number-width', lineNumberWidth(count));
-      pre.append(this.gutter);
     }
     if (previewLines !== undefined) {
       pre.classList.add('motto-partial-codeblock');

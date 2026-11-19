@@ -115,9 +115,8 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private section(parent: HTMLElement, name: string, level: number): HTMLElement {
-    const section = parent.ownerDocument.createElement('section');
+    const section = parent.createEl('section');
     section.className = `motto-settings-section motto-settings-level-${level}`;
-    parent.append(section);
     const heading = new Setting(section).setName(name).setHeading();
     heading.nameEl.setAttribute('role', 'heading');
     heading.nameEl.setAttribute('aria-level', String(level));
@@ -138,33 +137,29 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private createThemeIcon(label: string): HTMLElement {
-    const document = this.containerEl.ownerDocument;
-    const marker = document.createElement('span');
+    const marker = this.containerEl.ownerDocument.createElement('span');
     marker.className = 'motto-theme-setting-icon';
     marker.setAttribute('role', 'img');
     marker.setAttribute('aria-label', label);
     setTooltip(marker, label);
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const svg = marker.createSvg('svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
-    const half = document.createElementNS(svg.namespaceURI, 'path');
+    const half = svg.createSvg('path');
     half.setAttribute('d', 'M12 3a9 9 0 0 0 0 18Z');
     half.setAttribute('fill', 'currentColor');
-    const circle = document.createElementNS(svg.namespaceURI, 'circle');
+    const circle = svg.createSvg('circle');
     circle.setAttribute('cx', '12');
     circle.setAttribute('cy', '12');
     circle.setAttribute('r', '9');
     circle.setAttribute('fill', 'none');
     circle.setAttribute('stroke', 'currentColor');
     circle.setAttribute('stroke-width', '2');
-    svg.append(half, circle);
-    marker.append(svg);
     return marker;
   }
 
   private addThemeGroup(parent: HTMLElement, render: ThemeRenderer): void {
-    const group = parent.ownerDocument.createElement('div');
-    parent.append(group);
+    const group = parent.createDiv();
     const refresh = () => this.preserveContext(() => {
       if (!this.containerEl.contains(group)) return;
       for (const setting of this.disabledSettings.keys()) {
@@ -234,9 +229,9 @@ export class MottoSettingsTab extends PluginSettingTab {
       text.inputEl.cols = 36;
       text.inputEl.setAttribute('aria-label', name);
       text.setValue(this.motto.settings[key].join('\n'));
-      text.inputEl.addEventListener('change', async () => {
+      text.inputEl.addEventListener('change', () => {
         const value = normalizeLanguageList(text.getValue());
-        await this.save((settings) => ({ ...settings, [key]: value }));
+        void this.save((settings) => ({ ...settings, [key]: value }));
       });
       setting.addExtraButton(this.resetButton(() => this.save(
         (settings) => ({ ...settings, [key]: [...DEFAULT_SETTINGS[key]] }),
@@ -273,14 +268,14 @@ export class MottoSettingsTab extends PluginSettingTab {
       text.inputEl.step = '1';
       text.inputEl.setAttribute('aria-label', 'Partial preview lines');
       text.setValue(String(this.motto.settings.partialFoldLines));
-      text.inputEl.addEventListener('change', async () => {
+      text.inputEl.addEventListener('change', () => {
         const value = Number(text.getValue());
         if (!isPositiveInteger(value)) {
           new Notice('Motto Code Block: Enter a positive whole number of lines.');
           text.setValue(String(this.motto.settings.partialFoldLines));
           return;
         }
-        await this.save((settings) => ({ ...settings, partialFoldLines: value }));
+        void this.save((settings) => ({ ...settings, partialFoldLines: value }));
       });
       setting.addExtraButton(this.resetButton(() => this.save(
         (settings) => ({ ...settings, partialFoldLines: DEFAULT_SETTINGS.partialFoldLines }),
@@ -352,14 +347,14 @@ export class MottoSettingsTab extends PluginSettingTab {
         text.inputEl.step = '1';
         text.inputEl.setAttribute('aria-label', 'Title font size in pixels');
         text.setValue(String(style.titleFontSize));
-        text.inputEl.addEventListener('change', async () => {
+        text.inputEl.addEventListener('change', () => {
           const value = Number(text.getValue());
           if (!isPositiveInteger(value)) {
             new Notice('Motto Code Block: Enter a positive whole number of pixels.');
             text.setValue(String(this.motto.settings.headerStyles[mode].titleFontSize));
             return;
           }
-          await this.saveStyle(mode, { titleFontSize: value });
+          void this.saveStyle(mode, { titleFontSize: value });
         });
       }).addExtraButton(this.resetStyleButton(mode, 'titleFontSize', refresh));
     this.createSetting(parent, 'Override title color', disabled, mode).addToggle((toggle) => {

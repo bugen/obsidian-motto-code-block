@@ -47,21 +47,19 @@ export class ReadingCommandView {
       view.replaceChildren();
       for (const [index, command] of commands.entries()) {
         if (command.from >= cutoff) continue;
-        const row = document.createElement('div');
+        const row = view.createDiv();
         row.className = 'motto-command-row';
-        const prompt = document.createElement('span');
+        const prompt = row.createSpan();
         prompt.className = 'motto-command-prompt';
         prompt.setAttribute('aria-hidden', 'true');
         prompt.textContent = block.terminal?.user === 'root' ? '#' : '$';
-        const commandPre = document.createElement('pre');
-        const commandCode = document.createElement('code');
+        const commandPre = row.createEl('pre');
+        const commandCode = commandPre.createEl('code');
         commandCode.className = code.className;
         commandCode.append(cloneCodeRange(code, command.from, Math.min(command.to, cutoff)));
-        commandPre.append(commandCode);
         const tools = commandTools(document, block.text.slice(command.from, command.to), this.open, this.styles,
           index === commands.length - 1 && command.to <= cutoff ? toggle : undefined, this.tapMyHippo);
-        row.append(prompt, commandPre, tools);
-        view.append(row);
+        row.append(tools);
       }
       if (commands.length === 0 && toggle) {
         view.append(commandTools(document, null, this.open, this.styles, toggle, this.tapMyHippo));

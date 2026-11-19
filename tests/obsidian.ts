@@ -1,5 +1,22 @@
 import { StateEffect, StateField } from '@codemirror/state';
 
+if (typeof Node !== 'undefined') {
+  Node.prototype.createEl = function (tag) {
+    if (!this.ownerDocument) throw new Error('DOM helper requires an owner document.');
+    const element = this.ownerDocument.createElement(tag);
+    this.appendChild(element);
+    return element;
+  };
+  Node.prototype.createDiv = function () { return this.createEl('div'); };
+  Node.prototype.createSpan = function () { return this.createEl('span'); };
+  Node.prototype.createSvg = function (tag) {
+    if (!this.ownerDocument) throw new Error('DOM helper requires an owner document.');
+    const element = this.ownerDocument.createElementNS('http://www.w3.org/2000/svg', tag);
+    this.appendChild(element);
+    return element;
+  };
+}
+
 export const setLivePreview = StateEffect.define<boolean>();
 export const editorLivePreviewField = StateField.define<boolean>({
   create: () => true,

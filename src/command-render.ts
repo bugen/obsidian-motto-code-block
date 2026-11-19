@@ -13,9 +13,9 @@ export function commandCopyButton(document: Document, text: string, label: strin
   button.type = 'button';
   button.setAttribute('aria-label', label);
   setIcon(button, 'copy');
-  button.addEventListener('click', async (event) => {
+  button.addEventListener('click', (event) => {
     event.stopPropagation();
-    await copyCode(document, text);
+    void copyCode(document, text);
   });
   return button;
 }
@@ -37,21 +37,20 @@ export function setOutputToggle(
   button.replaceChildren();
   for (const mode of COLOR_MODES) {
     const style = styles[mode];
-    const icon = button.ownerDocument.createElement('span');
+    const icon = button.createSpan();
     icon.className = `motto-output-icon motto-output-icon-${mode}`;
     icon.setAttribute('aria-hidden', 'true');
     const closing = open !== style.reverseIcons;
     if (style.icon === 'hippo') {
       icon.classList.add('motto-output-icon-hippo');
-      const mark = button.ownerDocument.createElement('span');
+      const mark = icon.createSpan();
       mark.className = 'motto-output-hippo';
       mark.classList.toggle('motto-output-hippo-flipped', !closing);
       mark.style.maskImage = `url(${JSON.stringify(hippoIcon)})`;
-      icon.append(mark);
+      mark.style.setProperty('-webkit-mask-image', mark.style.maskImage);
     } else {
       setIcon(icon, OUTPUT_TOGGLE_GLYPHS[style.icon][closing ? 1 : 0]);
     }
-    button.append(icon);
     const property = `--motto-output-${mode}-color`;
     if (style.overrideColor) button.style.setProperty(property, style.color);
     else button.style.removeProperty(property);
@@ -66,7 +65,7 @@ export function commandTools(
   const tools = document.createElement('span');
   tools.className = 'motto-command-tools';
   if (toggle) {
-    const button = document.createElement('button');
+    const button = tools.createEl('button');
     button.className = 'motto-command-button motto-output-toggle';
     button.type = 'button';
     setOutputToggle(button, open, styles, tapMyHippo);
@@ -76,7 +75,6 @@ export function commandTools(
       replyToHippo(button);
       toggle();
     });
-    tools.append(button);
   }
   if (text !== null) tools.append(commandCopyButton(document, text, 'Copy command'));
   return tools;
@@ -84,7 +82,11 @@ export function commandTools(
 
 async function highlightOutput(code: HTMLElement): Promise<void> {
   try {
-    const prism: { highlightElement(element: HTMLElement): void } = await loadPrism();
+    const prism: unknown = await loadPrism();
+    if (typeof prism !== 'object' || prism === null ||
+        !('highlightElement' in prism) || typeof prism.highlightElement !== 'function') {
+      throw new Error('Prism highlighting is unavailable.');
+    }
     prism.highlightElement(code);
   } catch (error) {
     console.error('[Motto Code Block] Failed to highlight output.', error);
@@ -97,10 +99,10 @@ export function commandOutput(
 ): HTMLElement {
   const output = document.createElement('div');
   output.className = 'motto-ansi-view motto-command-output';
-  const tools = document.createElement('div');
+  const tools = output.createDiv();
   tools.className = 'motto-output-tools';
   if (edit) {
-    const button = document.createElement('button');
+    const button = tools.createEl('button');
     button.className = 'motto-command-button';
     button.type = 'button';
     button.setAttribute('aria-label', 'Edit source');
@@ -109,19 +111,16 @@ export function commandOutput(
       event.stopPropagation();
       edit();
     });
-    tools.append(button);
   }
   tools.append(commandCopyButton(document, language === 'ansi' ? ansiText(text) : text, 'Copy output'));
-  const pre = document.createElement('pre');
-  const code = document.createElement('code');
+  const pre = output.createEl('pre');
+  const code = pre.createEl('code');
   if (language === 'ansi') code.append(renderAnsi(document, text));
   else {
     code.className = `language-${language || 'plaintext'}`;
     code.textContent = text;
     void highlightOutput(code);
   }
-  pre.append(code);
-  output.append(tools, pre);
   return output;
 }
 

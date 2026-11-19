@@ -56,7 +56,7 @@ export function createExpandFooter(document: Document, hiddenLines: number, expa
   const footer = document.createElement('div');
   footer.className = 'motto-expand-footer';
   footer.contentEditable = 'false';
-  const button = document.createElement('button');
+  const button = footer.createEl('button');
   button.className = 'motto-expand-button';
   button.type = 'button';
   button.contentEditable = 'false';
@@ -66,7 +66,6 @@ export function createExpandFooter(document: Document, hiddenLines: number, expa
     event.stopPropagation();
     expand();
   });
-  footer.append(button);
   return footer;
 }
 
@@ -99,50 +98,45 @@ export function createHeader(
   header.setAttribute('role', 'group');
   header.setAttribute('aria-label', `${block.title || language.label}: code block`);
   if (settings.showIcon) {
-    const icon = document.createElement('span');
+    const icon = header.createSpan();
     icon.className = 'motto-header-icon';
     icon.setAttribute('aria-hidden', 'true');
     if (terminal) {
-      const mark = document.createElement('span');
+      const mark = icon.createSpan();
       mark.className = 'motto-terminal-icon';
       mark.style.maskImage = `url(${JSON.stringify(languages.shell.icon)})`;
-      icon.append(mark);
+      mark.style.setProperty('-webkit-mask-image', mark.style.maskImage);
     } else if (language.icon) {
-      const image = document.createElement('img');
+      const image = icon.createEl('img');
       image.className = 'motto-language-icon';
       image.src = language.icon;
       image.alt = '';
       image.draggable = false;
-      icon.append(image);
     } else {
       setIcon(icon, language.label === 'Plain text' ? 'file-text' : 'file-code');
     }
-    header.append(icon);
   }
   if (settings.showLanguage) {
-    const label = document.createElement('span');
+    const label = header.createSpan();
     label.className = 'motto-header-language';
     label.textContent = language.label;
-    header.append(label);
   }
   if (block.title) {
-    const title = document.createElement('span');
+    const title = header.createSpan();
     title.className = 'motto-header-title';
     title.textContent = block.title;
     title.title = block.title;
-    header.append(title);
   }
   if (terminal && (terminal.user || terminal.host || terminal.cwd)) {
-    const context = document.createElement('span');
+    const context = header.createSpan();
     context.className = 'motto-command-context';
     const append = (key: 'user' | 'host' | 'cwd') => {
       const value = terminal[key];
       if (!value) return;
-      const field = document.createElement('span');
+      const field = context.createSpan();
       field.className = `motto-command-${key}`;
       field.textContent = value;
       field.title = value;
-      context.append(field);
     };
     append('user');
     if (terminal.user && terminal.host) context.append('@');
@@ -150,37 +144,32 @@ export function createHeader(
     if ((terminal.user || terminal.host) && terminal.cwd) context.append(':');
     append('cwd');
     context.title = context.textContent;
-    header.append(context);
   }
   if (block.headerStyle) {
     header.dataset.headerStyle = block.headerStyle;
-    const background = document.createElement('span');
+    const background = header.createSpan();
     background.className = 'motto-header-background callout';
     background.dataset.callout = block.headerStyle;
     background.setAttribute('aria-hidden', 'true');
-    header.append(background);
   }
-  const controls = document.createElement('span');
+  const controls = header.createSpan();
   controls.className = 'motto-header-controls';
   if (settings.showHeaderCopyButton) {
-    const copy = document.createElement('button');
+    const copy = controls.createEl('button');
     copy.className = 'motto-header-button motto-header-copy';
     copy.type = 'button';
     copy.setAttribute('aria-label', 'Copy code block');
     setIcon(copy, 'copy');
-    copy.addEventListener('click', async (event) => {
+    copy.addEventListener('click', (event) => {
       event.stopPropagation();
-      await copyCode(document, block.text);
+      void copyCode(document, block.text);
     });
-    controls.append(copy);
   }
-  header.append(controls);
   if (folding) {
-    const toggle = document.createElement('button');
+    const toggle = controls.createEl('button');
     toggle.className = 'motto-header-button motto-header-toggle';
     toggle.type = 'button';
     toggle.setAttribute('aria-label', `${block.title || language.label}: toggle code block`);
-    controls.append(toggle);
     setHeaderFoldState(header, folding.state);
     header.addEventListener('click', (event) => {
       if (event.button !== 0) return;

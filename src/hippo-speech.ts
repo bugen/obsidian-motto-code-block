@@ -24,7 +24,7 @@ function randomBetween(min: number, max: number): number {
 
 class HippoSpeech {
   private readonly button: HTMLButtonElement;
-  private readonly window: Window & typeof globalThis;
+  private readonly window: NonNullable<Document['defaultView']>;
   private readonly observer: MutationObserver;
   private styles: MottoSettings['outputToggleStyles'];
   private open: boolean;
@@ -118,11 +118,10 @@ class HippoSpeech {
     if (!this.anchor()) return;
     this.window.clearTimeout(this.hideTimer);
     if (!this.bubble) {
-      this.bubble = this.button.ownerDocument.createElement('div');
+      this.bubble = this.button.ownerDocument.body.createDiv();
       this.bubble.className = 'motto-hippo-speech';
       this.bubble.dataset.motion = 'enter';
       this.bubble.setAttribute('aria-hidden', 'true');
-      this.button.ownerDocument.body.append(this.bubble);
     } else if (this.bubble.dataset.motion === 'exit') this.bubble.dataset.motion = 'idle';
     this.shown = true;
     this.phase = phase;

@@ -1,10 +1,26 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { URL as NodeURL } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import './obsidian';
 import { ansiText, renderAnsi } from '../src/ansi';
+
+beforeEach(() => {
+  const stylesheet = document.createElement('style');
+  stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
+  document.head.append(stylesheet);
+});
+
+afterEach(() => {
+  document.head.replaceChildren();
+  document.body.replaceChildren();
+});
 
 function render(text: string) {
   const code = document.createElement('code');
+  code.className = 'motto-ansi-view';
   code.append(renderAnsi(document, text));
+  document.body.append(code);
   return code;
 }
 
@@ -15,13 +31,21 @@ describe('static ANSI output', () => {
     expect(code.textContent).toBe('plainredboldnormalstyled');
     expect(spans[0]?.style.color).toBe('');
     expect(spans[1]?.style.color).toBe('var(--motto-ansi-red)');
-    expect(spans[1]?.style.fontWeight).toBe('');
-    expect(spans[2]?.style.fontWeight).toBe('bold');
+    expect(getComputedStyle(spans[1]!).fontWeight).not.toBe('bold');
+    expect(getComputedStyle(spans[2]!).fontWeight).toBe('bold');
     expect(spans[3]?.style.color).toBe('');
     expect(spans[4]?.style.color).toBe('rgb(1, 2, 3)');
     expect(spans[4]?.style.backgroundColor).toBe('rgb(0, 95, 0)');
-    expect(spans[4]?.style.fontStyle).toBe('italic');
-    expect(spans[4]?.style.textDecorationLine).toBe('underline line-through');
+    expect(getComputedStyle(spans[4]!).fontStyle).toBe('italic');
+    expect(getComputedStyle(spans[4]!).textDecorationLine).toBe('underline line-through');
+  });
+
+  it('applies dim and hidden decorations through CSS and resets subsequent text', () => {
+    const spans = [...render('\x1b[2;8mdim hidden\x1b[0mnormal').querySelectorAll('span')];
+    expect(getComputedStyle(spans[0]!).opacity).toBe('0.5');
+    expect(getComputedStyle(spans[0]!).visibility).toBe('hidden');
+    expect(getComputedStyle(spans[1]!).opacity).not.toBe('0.5');
+    expect(getComputedStyle(spans[1]!).visibility).not.toBe('hidden');
   });
 
   it('uses theme colors for the standard foreground/background palette and its bright variants', () => {
