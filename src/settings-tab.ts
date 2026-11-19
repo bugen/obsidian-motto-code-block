@@ -1,5 +1,5 @@
 import {
-  Notice, PluginSettingTab, Setting, setTooltip,
+  Notice, PluginSettingTab, Setting, requireApiVersion, setTooltip,
   type App, type ExtraButtonComponent, type SettingDefinitionItem, type SettingDefinitionRender,
 } from 'obsidian';
 import type MottoCodeBlockPlugin from './main';
@@ -114,10 +114,11 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private render(): void {
-    if (this.declarative) {
+    if (this.declarative && requireApiVersion('1.13.0')) {
       this.update();
       return;
     }
+    this.declarative = false;
     this.containerEl.empty();
     this.themeRefreshers.length = 0;
     this.disabledSettings.clear();

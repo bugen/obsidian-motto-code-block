@@ -9,14 +9,14 @@ function hasDomHelpers(window: Window | null): window is DomWindow {
 }
 
 export function createEl<K extends keyof HTMLElementTagNameMap>(document: Document, tag: K): HTMLElementTagNameMap[K] {
-  const window = document.defaultView;
-  if (hasDomHelpers(window) && window.document === document) return window.createEl(tag);
-  // Detached documents and iframe windows need their native document APIs.
-  return document.createElement(tag);
+  const ownerWindow = document.defaultView;
+  if (hasDomHelpers(ownerWindow) && ownerWindow.document === document) return ownerWindow.createEl(tag);
+  // Importing creates the node in the target document's realm, even without window helpers.
+  return document.importNode(window.createEl(tag), false);
 }
 
 export function createFragment(document: Document): DocumentFragment {
-  const window = document.defaultView;
-  if (hasDomHelpers(window) && window.document === document) return window.createFragment();
-  return document.createDocumentFragment();
+  const ownerWindow = document.defaultView;
+  if (hasDomHelpers(ownerWindow) && ownerWindow.document === document) return ownerWindow.createFragment();
+  return document.importNode(window.createFragment(), false);
 }

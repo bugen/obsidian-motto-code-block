@@ -82,6 +82,10 @@ export class App {}
 export class Plugin {}
 export class TFile {}
 
+export function requireApiVersion(): boolean {
+  return true;
+}
+
 export class Notice {
   static messages: string[] = [];
 

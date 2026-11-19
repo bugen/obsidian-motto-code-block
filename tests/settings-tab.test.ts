@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { App, Setting, SettingGroup, type SettingDefinitionItem } from 'obsidian';
+import * as obsidian from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MottoCodeBlockPlugin from '../src/main';
 import {
@@ -91,6 +92,21 @@ afterEach(() => {
 });
 
 describe('settings tab', () => {
+  it('falls back to legacy refresh when the declarative API version is unavailable', async () => {
+    const { plugin, tab, save, change, row } = fixture(true);
+    vi.spyOn(obsidian, 'requireApiVersion').mockReturnValue(false);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    save.mockRejectedValueOnce(new Error('Write failed'));
+    change('Bold title', true);
+    await vi.waitFor(() => { expect(log).toHaveBeenCalled(); });
+    expect(obsidian.requireApiVersion).toHaveBeenCalledWith('1.13.0');
+    expect(tab.update).toHaveBeenCalledTimes(1);
+    expect(row('Bold title').querySelector('input')?.checked).toBe(false);
+    expect(plugin.settings.headerStyles.light.titleBold).toBe(false);
+    change('Bold title', true);
+    await vi.waitFor(() => { expect(plugin.settings.headerStyles.light.titleBold).toBe(true); });
+  });
+
   it('provides searchable definitions for every control without rendering during indexing', () => {
     const { tab } = fixture();
     const create = vi.spyOn(document, 'createElement');

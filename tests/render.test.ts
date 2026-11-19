@@ -99,6 +99,21 @@ describe('header display', () => {
     expect(fragmentHelper).toHaveBeenCalledOnce();
   });
 
+  it('imports helper-created nodes into detached documents without window helpers', () => {
+    const ownerDocument = document.implementation.createHTMLDocument();
+    vi.spyOn(ownerDocument, 'defaultView', 'get').mockReturnValue(null);
+    const elementHelper = vi.spyOn(window, 'createEl');
+    const fragmentHelper = vi.spyOn(window, 'createFragment');
+    const element = createEl(ownerDocument, 'button');
+    const fragment = createFragment(ownerDocument);
+    expect(elementHelper).toHaveBeenCalledWith('button');
+    expect(fragmentHelper).toHaveBeenCalledOnce();
+    expect(element.ownerDocument).toBe(ownerDocument);
+    expect(fragment.ownerDocument).toBe(ownerDocument);
+    expect(element.isConnected).toBe(false);
+    expect(fragment.childNodes.length).toBe(0);
+  });
+
   it.each([false, true])('reserves ANSI toolbar space only with an edit button: %s', (editable) => {
     const stylesheet = document.createElement('style');
     stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
