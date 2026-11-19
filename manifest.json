@@ -1,7 +1,7 @@
 {
   "id": "motto-code-block",
   "name": "Motto Code Block",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "description": "Enhance fenced code blocks (codeblocks) and code snippets with headers, line numbers, and folding. Display shell commands and ANSI output in a terminal-style layout.",
   "author": "bugen",

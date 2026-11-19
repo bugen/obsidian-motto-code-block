@@ -1,6 +1,6 @@
 {
   "name": "obsidian-motto-code-block",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Focused code block enhancements for Obsidian.",
