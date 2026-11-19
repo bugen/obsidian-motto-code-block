@@ -114,7 +114,7 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private render(): void {
-    if (this.declarative && requireApiVersion('1.13.0')) {
+    if (requireApiVersion('1.13.0') && this.declarative) {
       this.update();
       return;
     }
