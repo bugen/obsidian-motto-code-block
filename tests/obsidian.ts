@@ -1,6 +1,14 @@
 import { StateEffect, StateField } from '@codemirror/state';
 
 if (typeof Node !== 'undefined') {
+  Object.assign(window, {
+    createEl<K extends keyof HTMLElementTagNameMap>(this: Window, tag: K): HTMLElementTagNameMap[K] {
+      return this.document.createElement(tag);
+    },
+    createFragment(this: Window): DocumentFragment {
+      return this.document.createDocumentFragment();
+    },
+  });
   Node.prototype.createEl = function (tag) {
     if (!this.ownerDocument) throw new Error('DOM helper requires an owner document.');
     const element = this.ownerDocument.createElement(tag);
@@ -90,6 +98,17 @@ export class PluginSettingTab {
   constructor() {
     this.containerEl = document.createElement('div');
     this.containerEl.empty = () => { this.containerEl.replaceChildren(); };
+  }
+
+  update(): void {}
+  hide(): void {}
+}
+
+export class SettingGroup {
+  readonly listEl: HTMLElement;
+
+  constructor(parent: HTMLElement) {
+    this.listEl = parent;
   }
 }
 

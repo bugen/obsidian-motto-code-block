@@ -3,6 +3,7 @@ import { splitCommands } from './commands';
 import { cloneCodeRange, commandOutputPreview, commandTools, setOutputToggle } from './command-render';
 import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
+import { createEl } from './dom';
 
 export class ReadingCommandView {
   private readonly pre: HTMLElement;
@@ -23,7 +24,7 @@ export class ReadingCommandView {
     this.tapMyHippo = tapMyHippo;
     const document = pre.ownerDocument;
     const code = pre.querySelector<HTMLElement>(':scope > code')!;
-    const view = this.view = document.createElement('div');
+    const view = this.view = createEl(document, 'div');
     view.className = `motto-command-view motto-command-spacing-${spacing}`;
     view.classList.toggle('motto-command-partial', preview !== undefined);
     view.classList.toggle('motto-command-output-open', open && foldState === 'expanded');

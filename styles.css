@@ -39,6 +39,12 @@
   color: var(--text-accent);
 }
 
+.motto-settings .motto-settings-host {
+  display: block;
+  padding: 0;
+  border: none;
+}
+
 .motto-settings .motto-theme-switch {
   display: inline-flex;
   flex: 0 0 auto;
@@ -70,7 +76,7 @@
     gap: 8px;
   }
 
-  .motto-settings .setting-item-control:has(textarea) {
+  .motto-settings .motto-language-list-control {
     flex-basis: 100%;
   }
 
@@ -132,7 +138,24 @@ body.theme-dark .motto-header {
 
 .motto-header[data-header-style] > .motto-header-background.callout[data-callout] {
   /* Keep native callout color variables, but discard its container styling. */
-  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: none;
+  margin: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  opacity: 1;
+  transform: none;
+  filter: none;
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -173,8 +196,8 @@ body.theme-dark .motto-header {
   color: var(--text-muted);
 }
 
-.motto-header > .motto-header-icon > img.motto-language-icon,
-.motto-header > .motto-header-icon > svg.svg-icon {
+.motto-header[role="group"] > .motto-header-icon > img.motto-language-icon,
+.motto-header[role="group"] > .motto-header-icon > svg.svg-icon {
   display: block;
   flex: 0 0 auto;
   width: var(--motto-header-icon-size);
@@ -182,8 +205,8 @@ body.theme-dark .motto-header {
   max-width: none;
   max-height: none;
   padding: 0;
-  border: none !important;
-  margin: 0 !important;
+  border: none;
+  margin: 0;
   object-fit: contain;
 }
 
@@ -494,10 +517,21 @@ body.theme-dark .motto-command-header {
 }
 
 pre.motto-command-native,
+.markdown-rendered pre.motto-command-native,
 .motto-command-view .copy-code-button,
 .motto-ansi-view .copy-code-button,
 .markdown-source-view.mod-cm6 .motto-command-start .code-block-flair {
-  display: none !important;
+  display: none;
+}
+
+body .markdown-rendered .motto-command-view pre > button.copy-code-button,
+body .markdown-rendered .motto-ansi-view pre > button.copy-code-button {
+  display: none;
+}
+
+.is-mobile .markdown-rendered div.motto-command-view pre > button.copy-code-button,
+.is-mobile .markdown-rendered div.motto-ansi-view pre > button.copy-code-button {
+  display: none;
 }
 
 .motto-command-view {
@@ -541,7 +575,7 @@ pre.motto-command-native,
 .motto-command-spacing-large { --motto-command-extra-spacing: 8px; }
 
 .motto-command-row + .motto-command-row { padding-block-start: 0; }
-.motto-command-row:has(+ .motto-command-row) {
+.motto-command-row:not(:last-child) {
   padding-block-end: calc(4px + var(--motto-command-extra-spacing, 4px));
 }
 
@@ -582,8 +616,8 @@ pre.motto-command-native,
   user-select: none;
 }
 
-body:not(.theme-dark) :is(.motto-command-tools, .motto-command-line):has(.motto-output-icon-light.motto-output-icon-hippo),
-body.theme-dark :is(.motto-command-tools, .motto-command-line):has(.motto-output-icon-dark.motto-output-icon-hippo) {
+body:not(.theme-dark) .motto-output-wide-light,
+body.theme-dark .motto-output-wide-dark {
   --motto-output-toggle-width: 32px;
   --motto-output-toggle-extra-width: 8px;
 }
@@ -748,9 +782,9 @@ body.theme-dark .motto-command-output-source { --motto-output-darken: 5%; }
 .motto-ansi-view .motto-ansi-dim { opacity: 0.5; }
 .motto-ansi-view .motto-ansi-italic { font-style: italic; }
 .motto-ansi-view .motto-ansi-hidden { visibility: hidden; }
-.motto-ansi-view .motto-ansi-underline { text-decoration-line: underline; }
-.motto-ansi-view .motto-ansi-strikethrough { text-decoration-line: line-through; }
-.motto-ansi-view .motto-ansi-underline.motto-ansi-strikethrough { text-decoration-line: underline line-through; }
+.motto-ansi-view .motto-ansi-underline { text-decoration: underline; }
+.motto-ansi-view .motto-ansi-strikethrough { text-decoration: line-through; }
+.motto-ansi-view .motto-ansi-underline.motto-ansi-strikethrough { text-decoration: underline line-through; }
 
 .motto-command-output {
   border-top: 1px solid var(--background-modifier-border);
@@ -796,7 +830,7 @@ body.theme-dark .motto-ansi-view { --motto-ansi-bright-tone: white; }
 .motto-output-tools { position: absolute; z-index: 2; top: 8px; right: 12px; display: flex; gap: 8px; }
 .markdown-rendered .motto-command-output > .motto-output-tools { right: 15px; }
 .markdown-source-view .motto-command-output > .motto-output-tools { right: 8px; }
-.motto-ansi-view:has(.motto-output-tools > button:nth-child(2)) > pre { padding-block-start: 26px; }
+.motto-ansi-view.motto-output-editable > pre { padding-block-start: 26px; }
 
 .motto-command-partial::after {
   content: "";

@@ -293,12 +293,20 @@ describe('live preview headers', () => {
     expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo')).not.toBeNull();
     expect(toggle.querySelector('.motto-output-icon-dark .motto-output-hippo-flipped')).not.toBeNull();
     expect(toggle.style.getPropertyValue('--motto-output-dark-color')).toBe('#abcdef');
+    expect(toggle.parentElement?.classList.contains('motto-output-wide-dark')).toBe(true);
+    if (command) {
+      expect(toggle.closest('.motto-command-line')?.classList.contains('motto-output-wide-dark')).toBe(true);
+    }
     expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/srv');
     toggle.click();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.querySelector('.motto-output-hippo-flipped')).toBeNull();
     updateSettings(DEFAULT_SETTINGS);
     expect(toggle.style.getPropertyValue('--motto-output-dark-color')).toBe('');
+    expect(toggle.parentElement?.classList.contains('motto-output-wide-dark')).toBe(false);
+    if (command) {
+      expect(toggle.closest('.motto-command-line')?.classList.contains('motto-output-wide-dark')).toBe(false);
+    }
     expect(toggle.querySelector('.motto-output-icon-light svg')?.getAttribute('data-icon')).toBe('eye');
     expect(view.state.doc.toString()).toBe(doc);
   });

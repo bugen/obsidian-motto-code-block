@@ -4,7 +4,8 @@ import { URL as NodeURL } from 'node:url';
 import * as obsidian from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseCodeBlocks, parseInfo } from '../src/codeblock';
-import { ansiPreview, commandOutput, commandOutputPreview, commandTools, setOutputToggle } from '../src/command-render';
+import { ansiPreview, commandOutput, commandOutputPreview, commandTools, outputToggleClasses, setOutputToggle } from '../src/command-render';
+import { createEl, createFragment } from '../src/dom';
 import { languages } from '../src/languages';
 import { applyHeaderStyles, createExpandFooter, createHeader, languagePresentation, setHeaderFoldState } from '../src/render';
 import { DEFAULT_SETTINGS, parseSettings } from '../src/settings';
@@ -69,6 +70,48 @@ describe('header display', () => {
       expect([...root.querySelectorAll('*')].every((child) => child.ownerDocument === otherDocument)).toBe(true);
     }
     expect(otherDocument.body.childElementCount).toBe(0);
+  });
+
+  it('uses the supplied document window helpers instead of the main window helpers', () => {
+    const ownerDocument = document.implementation.createHTMLDocument();
+    const element = ownerDocument.createElement('button');
+    const fragment = ownerDocument.createDocumentFragment();
+    const create = vi.fn(function (this: Window) {
+      expect(this).toBe(owner);
+      return element;
+    });
+    const fragmentHelper = vi.fn(function (this: Window) {
+      expect(this).toBe(owner);
+      return fragment;
+    });
+    const owner = new Proxy(window, {
+      get(target, property) {
+        if (property === 'document') return ownerDocument;
+        if (property === 'createEl') return create;
+        if (property === 'createFragment') return fragmentHelper;
+        return Reflect.get(target, property);
+      },
+    });
+    vi.spyOn(ownerDocument, 'defaultView', 'get').mockReturnValue(owner);
+    expect(createEl(ownerDocument, 'button')).toBe(element);
+    expect(createFragment(ownerDocument)).toBe(fragment);
+    expect(create).toHaveBeenCalledWith('button');
+    expect(fragmentHelper).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('reserves ANSI toolbar space only with an edit button: %s', (editable) => {
+    const stylesheet = document.createElement('style');
+    stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
+    const output = commandOutput(document, 'output', editable ? vi.fn() : undefined);
+    document.head.append(stylesheet);
+    document.body.append(output);
+    try {
+      const style = getComputedStyle(output.querySelector('pre')!);
+      expect(editable ? style.paddingBlockStart : style.paddingTop).toBe(editable ? '26px' : '0px');
+    } finally {
+      output.remove();
+      stylesheet.remove();
+    }
   });
 
   it.each(['markdown-rendered', 'markdown-source-view'])('aligns command and output copy controls on the same vertical axis in %s', (context) => {
@@ -228,7 +271,7 @@ describe('header display', () => {
     }).outputToggleStyles;
     const tools = commandTools(document, 'pwd', false, styles, () => {});
     const line = document.createElement('div');
-    line.className = 'cm-line motto-command-line';
+    line.className = `cm-line motto-command-line ${outputToggleClasses(styles)}`;
     line.style.setProperty('--motto-command-tools-width', '68px');
     line.append(tools);
     const stylesheet = document.createElement('style');
@@ -250,12 +293,13 @@ describe('header display', () => {
     }
   });
 
-  it('hides native copies in rendered commands and output without affecting ordinary blocks', () => {
+  it.each([false, true])('hides native copies without affecting ordinary blocks (mobile: %s)', (mobile) => {
     const stylesheet = document.createElement('style');
     stylesheet.textContent = `${readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8')}
-      .is-mobile .markdown-rendered pre:not(:hover) > button.copy-code-button { display: block; }`;
+      ${mobile ? '.is-mobile .markdown-rendered pre:not(:hover)' : '.markdown-rendered pre'}
+        > button.copy-code-button { display: block; }`;
     const container = document.createElement('div');
-    container.className = 'is-mobile';
+    container.className = mobile ? 'is-mobile' : '';
     const reading = document.createElement('div');
     reading.className = 'markdown-rendered';
     container.append(reading);
@@ -630,5 +674,46 @@ describe('header display', () => {
     expect(background.getAttribute('aria-hidden')).toBe('true');
     expect(background.childElementCount).toBe(0);
     expect(header.textContent).toBe('Title');
+  });
+
+  it('resets callout container styles and native image frames without resetting the header', () => {
+    const stylesheet = document.createElement('style');
+    stylesheet.textContent = `${readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8')}
+      .callout {
+        display: flex;
+        padding: 20px;
+        margin: 20px;
+        border: 3px solid red;
+        box-shadow: 0 0 5px red;
+        max-width: 100px;
+      }
+      .markdown-rendered img {
+        margin: 20px;
+        border: 2px solid red;
+      }`;
+    const container = document.createElement('div');
+    container.className = 'markdown-rendered';
+    const header = createHeader(document, {
+      language: 'js', title: 'Title', text: '', hasParameters: true, headerStyle: 'warning',
+    }, DEFAULT_SETTINGS)!;
+    container.append(header);
+    document.head.append(stylesheet);
+    document.body.append(container);
+    try {
+      const background = getComputedStyle(header.querySelector('.motto-header-background')!);
+      expect(background.display).toBe('block');
+      expect(background.paddingTop).toBe('0px');
+      expect(background.marginTop).toBe('0px');
+      expect(background.borderTopStyle).toBe('none');
+      expect(background.boxShadow).toBe('none');
+      expect(background.maxWidth).toBe('none');
+      const icon = getComputedStyle(header.querySelector('.motto-language-icon')!);
+      expect(icon.marginTop).toBe('0px');
+      expect(icon.borderTopStyle).toBe('none');
+      expect(getComputedStyle(header).display).toBe('flex');
+    } finally {
+      container.remove();
+      stylesheet.remove();
+    }
   });
 });

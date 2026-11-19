@@ -1,5 +1,6 @@
 import Anser from 'anser';
 import ansiRegex from 'ansi-regex';
+import { createFragment } from './dom';
 
 export function ansiText(text: string): string {
   return text.replace(ansiRegex(), '');
@@ -21,7 +22,7 @@ function ansiColor(color: string, trueColor: string): string {
 }
 
 export function renderAnsi(document: Document, text: string): DocumentFragment {
-  const fragment = document.createDocumentFragment();
+  const fragment = createFragment(document);
   const parser = new Anser();
   // eslint-disable-next-line no-control-regex -- Match ANSI SGR control characters.
   const sgr = /^(?:\u001b\[|\u009b)[\d;]*m$/u;

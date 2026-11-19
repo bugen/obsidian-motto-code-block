@@ -2,6 +2,7 @@ import { Notice, setIcon } from 'obsidian';
 import type { CodeBlock } from './codeblock';
 import { languages, type LanguageDefinition } from './languages';
 import { COLOR_MODES, shouldShowHeader, type FoldState, type MottoSettings } from './settings';
+import { createEl } from './dom';
 
 const languagesByAlias = new Map<string, LanguageDefinition>();
 const languagesByLabel = new Map<string, LanguageDefinition>();
@@ -53,7 +54,7 @@ export function setHeaderFoldState(header: HTMLElement, state: FoldState): void 
 }
 
 export function createExpandFooter(document: Document, hiddenLines: number, expand: () => void): HTMLDivElement {
-  const footer = document.createElement('div');
+  const footer = createEl(document, 'div');
   footer.className = 'motto-expand-footer';
   footer.contentEditable = 'false';
   const button = footer.createEl('button');
@@ -88,7 +89,7 @@ export function createHeader(
   folding?: { state: FoldState; toggle: (header: HTMLElement) => void },
 ): HTMLElement | null {
   if (block.exclude || !shouldShowHeader(settings.headerDisplay, block.hasParameters)) return null;
-  const header = document.createElement('div');
+  const header = createEl(document, 'div');
   header.className = 'motto-header';
   const terminal = settings.commandBlocks ? block.terminal : undefined;
   if (terminal) header.classList.add('motto-command-header');

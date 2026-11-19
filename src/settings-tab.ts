@@ -1,5 +1,9 @@
-import { Notice, PluginSettingTab, Setting, setTooltip, type App, type ExtraButtonComponent } from 'obsidian';
+import {
+  Notice, PluginSettingTab, Setting, setTooltip,
+  type App, type ExtraButtonComponent, type SettingDefinitionItem, type SettingDefinitionRender,
+} from 'obsidian';
 import type MottoCodeBlockPlugin from './main';
+import { createEl } from './dom';
 import {
   COLOR_MODES, COMMAND_SPACING_MODES, DEFAULT_SETTINGS, FOLD_STATES, HEADER_BACKGROUNDS, HEADER_DISPLAY_MODES,
   ICON_SIZES, LANGUAGE_LABEL_STYLES, LINE_NUMBER_MODES, OUTPUT_TOGGLE_ICONS,
@@ -17,6 +21,8 @@ export class MottoSettingsTab extends PluginSettingTab {
   private readonly themeRefreshers: (() => void)[] = [];
   private readonly disabledSettings = new Map<Setting, () => boolean>();
   private readonly resetButtons = new Map<HTMLElement, () => boolean>();
+  private declarative = false;
+  private opening = true;
 
   constructor(app: App, motto: MottoCodeBlockPlugin) {
     super(app, motto);
@@ -25,26 +31,121 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   override display(): void {
+    this.declarative = false;
+    this.opening = false;
     this.colorMode = this.containerEl.ownerDocument.body.classList.contains('theme-dark') ? 'dark' : 'light';
     this.render();
   }
 
+  override getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      this.customSettings('Editing theme', ['Light', 'Dark'], (parent) => this.addThemeSelector(parent)),
+      {
+        type: 'group', heading: 'General', cls: 'motto-settings-section motto-settings-level-2',
+        items: [this.customSettings('Language eligibility', ['Language include list', 'Language exclude list'],
+          (parent) => this.addLanguages(parent))],
+      },
+      {
+        type: 'group', heading: 'Code blocks', cls: 'motto-settings-section motto-settings-level-2',
+        items: [
+          this.customSettings('Header', [
+            'Header display', 'Show header copy button', 'Show icon', 'Icon size', 'Show language label',
+            'Language label style', 'Header background', 'Custom background color', 'Title',
+            'Bold title', 'Italic title', 'Title font size', 'Override title color', 'Custom title color',
+          ], (parent) => this.addHeader(parent)),
+          this.customSettings('Body', ['Line numbers'], (parent) => this.addBody(parent)),
+          this.customSettings('Folding', ['Default fold state', 'Partial preview lines'],
+            (parent) => this.addFolding(parent)),
+        ],
+      },
+      {
+        type: 'group', heading: 'Command blocks', cls: 'motto-settings-section motto-settings-level-2',
+        items: [
+          this.customSettings('Command blocks', ['Command spacing'], (parent) => this.addCommands(parent)),
+          this.customSettings('Output', [
+            'Output languages', 'Output toggle icon', 'Reverse output toggle icons',
+            'Override output toggle color', 'Output toggle color', 'Tap my hip-po!',
+          ], (parent) => this.addOutput(parent)),
+        ],
+      },
+    ];
+  }
+
+  override hide(): void {
+    this.opening = true;
+    this.themeRefreshers.length = 0;
+    this.disabledSettings.clear();
+    this.resetButtons.clear();
+    super.hide();
+  }
+
+  private customSettings(
+    name: string, aliases: string[], render: (parent: HTMLElement) => void,
+  ): SettingDefinitionRender {
+    return {
+      name, aliases,
+      render: (setting) => {
+        this.declarative = true;
+        if (this.opening) {
+          this.colorMode = this.containerEl.ownerDocument.body.classList.contains('theme-dark') ? 'dark' : 'light';
+          this.opening = false;
+        }
+        const host = setting.settingEl;
+        host.replaceChildren();
+        host.classList.add('motto-settings-host');
+        const start = this.themeRefreshers.length;
+        render(host);
+        const refreshers = this.themeRefreshers.slice(start);
+        this.updateControlStates();
+        return () => {
+          for (const refresh of refreshers) {
+            const index = this.themeRefreshers.indexOf(refresh);
+            if (index >= 0) this.themeRefreshers.splice(index, 1);
+          }
+          for (const control of this.disabledSettings.keys()) {
+            if (host.contains(control.settingEl)) this.disabledSettings.delete(control);
+          }
+          for (const element of this.resetButtons.keys()) {
+            if (host.contains(element)) this.resetButtons.delete(element);
+          }
+        };
+      },
+    };
+  }
+
   private render(): void {
+    if (this.declarative) {
+      this.update();
+      return;
+    }
     this.containerEl.empty();
     this.themeRefreshers.length = 0;
     this.disabledSettings.clear();
     this.resetButtons.clear();
     this.addThemeSelector();
 
-    const general = this.section(this.containerEl, 'General', 2);
-    const languages = this.section(general, 'Language eligibility', 3);
+    this.addLanguages(this.section(this.containerEl, 'General', 2));
+    const blocks = this.section(this.containerEl, 'Code blocks', 2);
+    this.addHeader(blocks);
+    this.addBody(blocks);
+    this.addFolding(blocks);
+    const commands = this.section(this.containerEl, 'Command blocks', 2);
+    this.addCommands(commands);
+    this.addOutput(commands);
+    this.updateControlStates();
+  }
+
+  private addLanguages(parent: HTMLElement): void {
+    const languages = this.section(parent, 'Language eligibility', 3);
     this.addLanguageList(languages, 'languageIncludeList', 'Language include list',
       'Enhance only these fence names. Separate with commas, spaces or new lines; case-insensitive, exact names only. Aliases are separate entries. Use plaintext for unlabelled blocks. Empty disables all enhancements.');
     this.addLanguageList(languages, 'languageExcludeList', 'Language exclude list',
       'Never enhance these fence names, even when present in the include list. Same format as the include list. Mermaid is excluded by default to preserve native rendering.');
 
-    const blocks = this.section(this.containerEl, 'Code blocks', 2);
-    const header = this.section(blocks, 'Header', 3);
+  }
+
+  private addHeader(parent: HTMLElement): void {
+    const header = this.section(parent, 'Header', 3);
     const noHeader = () => this.motto.settings.headerDisplay === 'none';
     this.addChoice(header, 'headerDisplay', 'Header display',
       'Default: show only for supported parameters, such as title, user, host or fold. Command flags and unknown options do not count. Always: show for every block. None: hide.',
@@ -59,24 +160,34 @@ export class MottoSettingsTab extends PluginSettingTab {
     this.addThemeGroup(header, (parent, mode, refresh) => this.addBackground(parent, mode, refresh));
     const title = this.section(header, 'Title', 4);
     this.addThemeGroup(title, (parent, mode, refresh) => this.addTitle(parent, mode, refresh));
+  }
 
-    const body = this.section(blocks, 'Body', 3);
+  private addBody(parent: HTMLElement): void {
+    const body = this.section(parent, 'Body', 3);
     this.addChoice(body, 'lineNumbers', 'Line numbers',
       'Default: show for two or more lines. Always: show for every block. None: hide. Command rows and paired output are not numbered.',
       LINE_NUMBER_MODES, { default: 'Default', always: 'Always', none: 'None' });
-    const folding = this.section(blocks, 'Folding', 3);
+  }
+
+  private addFolding(parent: HTMLElement): void {
+    const folding = this.section(parent, 'Folding', 3);
     this.addChoice(folding, 'defaultFoldState', 'Default fold state',
       'Initial body state when fold, expand or unfold is not specified. Explicit options take precedence. Does not set paired output visibility.',
       FOLD_STATES, { expanded: 'Expanded', folded: 'Folded', partial: 'Partial preview' });
     this.addPreviewLines(folding);
+  }
 
-    const commands = this.section(this.containerEl, 'Command blocks', 2);
+  private addCommands(commands: HTMLElement): void {
     const noCommands = () => !this.motto.settings.commandBlocks;
     this.addToggle(commands, 'commandBlocks', 'Command blocks',
       'Enhance supported shell blocks marked cmd/command, containing execution metadata, or immediately followed by a configured output block. Standalone ANSI rendering is independent.');
     this.addChoice(commands, 'commandSpacing', 'Command spacing',
       'Vertical spacing between commands in the same block. Small keeps the original spacing; Middle is the default. Continued lines are unchanged.',
       COMMAND_SPACING_MODES, { small: 'Small', middle: 'Middle', large: 'Large' }, noCommands);
+  }
+
+  private addOutput(commands: HTMLElement): void {
+    const noCommands = () => !this.motto.settings.commandBlocks;
     const output = this.section(commands, 'Output', 3);
     this.addLanguageList(output, 'outputLanguages', 'Output languages',
       'Fence languages treated as command output when immediately after a supported shell block. Default: ansi. Add text, json or xml as needed. Separate with commas, spaces or new lines; case-insensitive, exact names only. Use plaintext for unlabelled blocks. Language eligibility and exclude still apply. Empty disables output pairing.',
@@ -85,11 +196,10 @@ export class MottoSettingsTab extends PluginSettingTab {
     this.addToggle(output, 'tapMyHippo', 'Tap my hip-po!',
       'Let hippos speak.',
       noCommands);
-    this.updateControlStates();
   }
 
-  private addThemeSelector(): void {
-    const setting = new Setting(this.containerEl).setName('Editing theme')
+  private addThemeSelector(parent = this.containerEl): void {
+    const setting = new Setting(parent).setName('Editing theme')
       .setDesc('Only settings marked with ');
     setting.descEl.append(this.createThemeIcon('Separate Light/Dark setting.'),
       ' are separate for Light and Dark. All other settings are shared. This does not change Obsidian\'s theme.');
@@ -137,7 +247,7 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private createThemeIcon(label: string): HTMLElement {
-    const marker = this.containerEl.ownerDocument.createElement('span');
+    const marker = createEl(this.containerEl.ownerDocument, 'span');
     marker.className = 'motto-theme-setting-icon';
     marker.setAttribute('role', 'img');
     marker.setAttribute('aria-label', label);
@@ -224,6 +334,7 @@ export class MottoSettingsTab extends PluginSettingTab {
   ): void {
     const setting = this.createSetting(parent, name, disabled).setDesc(description);
     const defaults = new Set(DEFAULT_SETTINGS[key]);
+    setting.controlEl.classList.add('motto-language-list-control');
     setting.addTextArea((text) => {
       text.inputEl.rows = key === 'languageIncludeList' ? 6 : 3;
       text.inputEl.cols = 36;

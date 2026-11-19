@@ -1,4 +1,5 @@
 import type { LineNumberMode } from './settings';
+import { createEl } from './dom';
 
 export function shouldShowLineNumbers(mode: LineNumberMode, count: number): boolean {
   return count > 0 && (mode === 'always' || (mode === 'default' && count >= 2));
@@ -9,7 +10,7 @@ export function lineNumberWidth(count: number): string {
 }
 
 export function createLineNumber(document: Document, number: number): HTMLElement {
-  const element = document.createElement('span');
+  const element = createEl(document, 'span');
   element.className = 'motto-line-number';
   element.setAttribute('aria-hidden', 'true');
   element.textContent = String(number);

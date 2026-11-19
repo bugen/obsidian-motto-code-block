@@ -7,8 +7,9 @@ import { isLanguageEnabled, shouldShowHeader, type FoldState, type MottoSettings
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
 import { splitCommands } from './commands';
-import { ansiPreview, commandOutputPreview, commandTools, setOutputToggle } from './command-render';
+import { ansiPreview, commandOutputPreview, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
+import { createEl } from './dom';
 
 interface HeaderState {
   livePreview: boolean;
@@ -152,7 +153,7 @@ class CommandWidget extends WidgetType {
 
   override toDOM(view: EditorView): HTMLElement {
     const document = view.dom.ownerDocument;
-    const marker = document.createElement('span');
+    const marker = createEl(document, 'span');
     marker.className = this.text === null ? 'motto-command-empty-tools' : 'motto-command-marker';
     marker.contentEditable = 'false';
     if (this.text !== null) {
@@ -360,7 +361,7 @@ function decorate(
       for (let line = 0; line < count; line++) {
         const withToggle = output !== undefined && lastCommand?.startLine === line && lastCommand.endLine < count;
         decorations.push(Decoration.line({ attributes: {
-          class: 'motto-command-line',
+          class: `motto-command-line${withToggle ? ` ${outputToggleClasses(settings.outputToggleStyles)}` : ''}`,
           style: `--motto-command-tools-width: ${withToggle ? '68px' : '36px'}`,
         } }).range(state.doc.line(block.startLine + line + 2).from));
       }

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { App, Setting } from 'obsidian';
+import { App, Setting, SettingGroup, type SettingDefinitionItem } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MottoCodeBlockPlugin from '../src/main';
 import {
@@ -9,7 +9,7 @@ import {
 import { MottoSettingsTab } from '../src/settings-tab';
 import { Notice } from './obsidian';
 
-function fixture() {
+function fixture(declarative = false) {
   const app = new App();
   const plugin = new MottoCodeBlockPlugin(app, {
     id: 'motto-code-block', name: 'Motto Code Block', version: '0.1.0',
@@ -21,7 +21,27 @@ function fixture() {
   });
   const tab = new MottoSettingsTab(app, plugin);
   document.body.append(tab.containerEl);
-  tab.display();
+  const cleanups: (() => void)[] = [];
+  function renderDefinitions(): void {
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    tab.containerEl.replaceChildren();
+    function render(item: SettingDefinitionItem, parent: HTMLElement): void {
+      if ('type' in item) {
+        if (item.type !== 'group') throw new Error('Unsupported settings definition.');
+        const group = parent.createEl('section');
+        group.className = item.cls ?? '';
+        for (const child of item.items ?? []) render(child, group);
+      } else if (item.render) {
+        const cleanup = item.render(new Setting(parent), new SettingGroup(parent));
+        if (cleanup) cleanups.push(cleanup);
+      } else throw new Error('Missing custom settings renderer.');
+    }
+    for (const item of tab.getSettingDefinitions()) render(item, tab.containerEl);
+  }
+  if (declarative) {
+    vi.spyOn(tab, 'update').mockImplementation(renderDefinitions);
+    tab.update();
+  } else tab.display();
   function row(name: string) {
     const element = [...tab.containerEl.querySelectorAll<HTMLElement>('.setting-item')]
       .find((element) => element.querySelector('.setting-item-name')?.textContent === name &&
@@ -71,6 +91,70 @@ afterEach(() => {
 });
 
 describe('settings tab', () => {
+  it('provides searchable definitions for every control without rendering during indexing', () => {
+    const { tab } = fixture();
+    const create = vi.spyOn(document, 'createElement');
+    const before = tab.containerEl.innerHTML;
+    const definitions = tab.getSettingDefinitions();
+    expect(create).not.toHaveBeenCalled();
+    expect(tab.containerEl.innerHTML).toBe(before);
+    const terms: string[] = [];
+    function collect(items: SettingDefinitionItem[]): void {
+      for (const item of items) {
+        if ('type' in item) {
+          if (item.type !== 'group') throw new Error('Unsupported settings definition.');
+          collect(item.items ?? []);
+        } else terms.push(item.name, ...item.aliases ?? []);
+      }
+    }
+    collect(definitions);
+    for (const row of tab.containerEl.querySelectorAll<HTMLElement>('[data-motto-setting]')) {
+      expect(terms).toContain(row.dataset.mottoSetting);
+    }
+    for (const name of ['Custom background color', 'Custom title color', 'Output toggle color']) {
+      expect(terms).toContain(name);
+    }
+  });
+
+  it('renders, persists and refreshes the same controls through the declarative API', async () => {
+    document.body.className = 'theme-dark';
+    const { plugin, tab, change, row, reset } = fixture(true);
+    expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    change('Header background', 'custom');
+    await vi.waitFor(() => { expect(row('Custom background color')).toBeDefined(); });
+    change('Custom background color', '#123456');
+    change('Line numbers', 'always');
+    await vi.waitFor(() => {
+      expect(plugin.settings.headerStyles.dark.backgroundColor).toBe('#123456');
+      expect(plugin.settings.lineNumbers).toBe('always');
+    });
+    change('Editing theme', 'light');
+    await vi.waitFor(() => { expect(row('Header background').querySelector('select')?.value).toBe('code'); });
+    change('Command blocks', false);
+    await vi.waitFor(() => { expect(row('Output languages').querySelector('textarea')?.disabled).toBe(true); });
+    reset('Command blocks');
+    await vi.waitFor(() => { expect(row('Output languages').querySelector('textarea')?.disabled).toBe(false); });
+    tab.hide();
+    tab.update();
+    expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+  });
+
+  it('recovers declarative controls after a save fails without changing the selected editing theme', async () => {
+    const { plugin, tab, save, change, row } = fixture(true);
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => { expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark'); });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    save.mockRejectedValueOnce(new Error('Write failed'));
+    change('Bold title', true);
+    await vi.waitFor(() => { expect(log).toHaveBeenCalled(); });
+    expect(plugin.settings.headerStyles.dark.titleBold).toBe(false);
+    expect(tab.update).toHaveBeenCalledTimes(2);
+    expect(row('Bold title').querySelector('input')?.checked).toBe(false);
+    expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    change('Bold title', true);
+    await vi.waitFor(() => { expect(plugin.settings.headerStyles.dark.titleBold).toBe(true); });
+  });
+
   it('groups behavior and appearance by target beneath the theme selector', () => {
     const { tab, row } = fixture();
     expect(tab.containerEl.querySelector('.setting-item-name')?.textContent).toBe('Editing theme');

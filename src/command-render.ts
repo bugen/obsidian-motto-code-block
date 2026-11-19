@@ -6,9 +6,10 @@ import { COLOR_MODES, type MottoSettings, type OutputToggleIcon } from './settin
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import hippoIcon from './hippo.svg';
 import { replyToHippo, updateHippoSpeech } from './hippo-speech';
+import { createEl, createFragment } from './dom';
 
 export function commandCopyButton(document: Document, text: string, label: string): HTMLButtonElement {
-  const button = document.createElement('button');
+  const button = createEl(document, 'button');
   button.className = 'motto-command-button motto-command-copy';
   button.type = 'button';
   button.setAttribute('aria-label', label);
@@ -32,6 +33,12 @@ export function setOutputToggle(
   button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles'], tapMyHippo = false,
 ): void {
   const label = open ? 'Hide output' : 'Show output';
+  const tools = button.parentElement;
+  if (tools?.classList.contains('motto-command-tools')) {
+    for (const mode of COLOR_MODES) {
+      tools.classList.toggle(`motto-output-wide-${mode}`, styles[mode].icon === 'hippo');
+    }
+  }
   button.setAttribute('aria-expanded', String(open));
   button.setAttribute('aria-label', label);
   button.replaceChildren();
@@ -62,7 +69,7 @@ export function commandTools(
   document: Document, text: string | null, open: boolean, styles: MottoSettings['outputToggleStyles'],
   toggle?: () => void, tapMyHippo = false,
 ): HTMLElement {
-  const tools = document.createElement('span');
+  const tools = createEl(document, 'span');
   tools.className = 'motto-command-tools';
   if (toggle) {
     const button = tools.createEl('button');
@@ -80,11 +87,20 @@ export function commandTools(
   return tools;
 }
 
+export function outputToggleClasses(styles: MottoSettings['outputToggleStyles']): string {
+  return COLOR_MODES.filter((mode) => styles[mode].icon === 'hippo')
+    .map((mode) => `motto-output-wide-${mode}`).join(' ');
+}
+
+function isPrismHighlighter(prism: unknown): prism is { highlightElement(element: HTMLElement): void } {
+  return typeof prism === 'object' && prism !== null &&
+    'highlightElement' in prism && typeof prism.highlightElement === 'function';
+}
+
 async function highlightOutput(code: HTMLElement): Promise<void> {
   try {
     const prism: unknown = await loadPrism();
-    if (typeof prism !== 'object' || prism === null ||
-        !('highlightElement' in prism) || typeof prism.highlightElement !== 'function') {
+    if (!isPrismHighlighter(prism)) {
       throw new Error('Prism highlighting is unavailable.');
     }
     prism.highlightElement(code);
@@ -97,11 +113,12 @@ async function highlightOutput(code: HTMLElement): Promise<void> {
 export function commandOutput(
   document: Document, text: string, edit?: () => void, language = 'ansi',
 ): HTMLElement {
-  const output = document.createElement('div');
+  const output = createEl(document, 'div');
   output.className = 'motto-ansi-view motto-command-output';
   const tools = output.createDiv();
   tools.className = 'motto-output-tools';
   if (edit) {
+    output.classList.add('motto-output-editable');
     const button = tools.createEl('button');
     button.className = 'motto-command-button';
     button.type = 'button';
@@ -183,7 +200,7 @@ export function cloneCodeRange(code: HTMLElement, from: number, to: number): Doc
       while (ancestor !== code) {
         const wrapper = ancestor.cloneNode(false);
         wrapper.appendChild(fragment);
-        fragment = document.createDocumentFragment();
+        fragment = createFragment(document);
         fragment.append(wrapper);
         ancestor = ancestor.parentNode!;
       }

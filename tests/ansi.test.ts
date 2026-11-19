@@ -37,7 +37,7 @@ describe('static ANSI output', () => {
     expect(spans[4]?.style.color).toBe('rgb(1, 2, 3)');
     expect(spans[4]?.style.backgroundColor).toBe('rgb(0, 95, 0)');
     expect(getComputedStyle(spans[4]!).fontStyle).toBe('italic');
-    expect(getComputedStyle(spans[4]!).textDecorationLine).toBe('underline line-through');
+    expect(getComputedStyle(spans[4]!).textDecoration).toBe('underline line-through');
   });
 
   it('applies dim and hidden decorations through CSS and resets subsequent text', () => {
