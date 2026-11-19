@@ -1,5 +1,5 @@
 import { Notice, PluginSettingTab, Setting, setTooltip, type App, type ExtraButtonComponent } from 'obsidian';
-import type MottoCodeblockPlugin from './main';
+import type MottoCodeBlockPlugin from './main';
 import {
   COLOR_MODES, COMMAND_SPACING_MODES, DEFAULT_SETTINGS, FOLD_STATES, HEADER_BACKGROUNDS, HEADER_DISPLAY_MODES,
   ICON_SIZES, LANGUAGE_LABEL_STYLES, LINE_NUMBER_MODES, OUTPUT_TOGGLE_ICONS,
@@ -11,14 +11,14 @@ type ChoiceKey = 'headerDisplay' | 'lineNumbers' | 'defaultFoldState' | 'command
 type ThemeRenderer = (parent: HTMLElement, mode: ColorMode, refresh: () => void) => void;
 
 export class MottoSettingsTab extends PluginSettingTab {
-  private readonly motto: MottoCodeblockPlugin;
+  private readonly motto: MottoCodeBlockPlugin;
   private colorMode: ColorMode = 'light';
   private saveQueue: Promise<void> = Promise.resolve();
   private readonly themeRefreshers: (() => void)[] = [];
   private readonly disabledSettings = new Map<Setting, () => boolean>();
   private readonly resetButtons = new Map<HTMLElement, () => boolean>();
 
-  constructor(app: App, motto: MottoCodeblockPlugin) {
+  constructor(app: App, motto: MottoCodeBlockPlugin) {
     super(app, motto);
     this.motto = motto;
     this.containerEl.classList.add('motto-settings');

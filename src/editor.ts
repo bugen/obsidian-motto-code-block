@@ -328,7 +328,7 @@ function decorate(
       }).range(block.from));
       decorations.push(foldState === 'folded'
         ? Decoration.replace({ block: true }).range(block.from, commandEnd(block, settings))
-        : Decoration.line({ class: 'motto-codeblock-start' }).range(block.from));
+        : Decoration.line({ class: 'motto-code-block-start' }).range(block.from));
     }
     if (foldState === 'folded') continue;
     if (block.language === 'ansi' && !ansiEditing.has(block.from)) {

@@ -4,7 +4,7 @@ import { ReadingHeaders } from './reading';
 import { parseSettings, type MottoSettings } from './settings';
 import { MottoSettingsTab } from './settings-tab';
 
-export default class MottoCodeblockPlugin extends Plugin {
+export default class MottoCodeBlockPlugin extends Plugin {
   override settings: MottoSettings = parseSettings(null);
   private reading: ReadingHeaders | undefined;
   private editorHeaders: ReturnType<typeof createEditorHeaders> | undefined;

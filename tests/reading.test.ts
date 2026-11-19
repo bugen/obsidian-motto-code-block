@@ -692,7 +692,7 @@ describe('reading mode headers', () => {
     await renderer.process(native.section, context);
     const header = () => native.section.querySelector<HTMLElement>('.motto-header');
     expect(header()).toBeNull();
-    expect(native.pre.classList.contains('motto-codeblock')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block')).toBe(false);
     expect(native.pre.querySelectorAll('.motto-line-number')).toHaveLength(2);
     updateSettings({ ...settings, headerDisplay: 'always' });
     expect(header()?.dataset.foldState).toBe('partial');
@@ -711,7 +711,7 @@ describe('reading mode headers', () => {
     expect(header()?.dataset.foldState).toBe('folded');
     updateSettings({ ...settings, headerDisplay: 'none' });
     expect(header()).toBeNull();
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     updateSettings(settings);
     updateSource(source);
     await renderer.process(native.section, context);
@@ -833,7 +833,7 @@ describe('reading mode headers', () => {
     const { renderer, context } = fixture(source, { ...DEFAULT_SETTINGS, defaultFoldState });
     const natives = [0, 1, 2, 3].map((index) => block(`block${index}()`));
     for (const native of natives) await renderer.process(native.section, context);
-    expect(natives.map(({ pre }) => pre.classList.contains('motto-codeblock-collapsed')))
+    expect(natives.map(({ pre }) => pre.classList.contains('motto-code-block-collapsed')))
       .toEqual([true, false, false, defaultFoldState === 'folded']);
     expect(natives.map(({ section }) => section.querySelector('.motto-header-toggle')?.getAttribute('aria-expanded')))
       .toEqual(['false', 'true', 'true', String(defaultFoldState === 'expanded')]);
@@ -850,18 +850,18 @@ describe('reading mode headers', () => {
     await renderer.process(second.section, context);
     first.section.querySelector<HTMLElement>('.motto-header')!.click();
     updateSettings({ ...DEFAULT_SETTINGS, defaultFoldState: 'folded' });
-    expect(first.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
-    expect(second.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(first.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
+    expect(second.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     first.section.querySelector<HTMLElement>('.motto-header')!.click();
     updateSource(`Intro\n\n${source}`);
     await renderer.process(first.section, context);
     await renderer.process(second.section, context);
     updateSettings({ ...DEFAULT_SETTINGS, defaultFoldState: 'folded', showIcon: false });
-    expect(first.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
-    expect(second.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(first.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
+    expect(second.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     updateSettings(DEFAULT_SETTINGS);
-    expect(first.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
-    expect(second.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(first.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
+    expect(second.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
   });
 
   it('reapplies changed folding options without resetting manual state for unrelated edits', async () => {
@@ -871,15 +871,15 @@ describe('reading mode headers', () => {
     native.section.querySelector<HTMLElement>('.motto-header')!.click();
     updateSource('```js fold title:Changed\nrun()\n```');
     await renderer.process(native.section, context);
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     updateSource('```js expand title:Changed\nrun()\n```');
     await renderer.process(native.section, context);
     updateSource('```js fold title:Changed\nrun()\n```');
     await renderer.process(native.section, context);
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     updateSource('```js title:Changed\nrun()\n```');
     await renderer.process(native.section, context);
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
   });
 
   it('never hides initially folded code without a header and restores native content on unload', async () => {
@@ -887,13 +887,13 @@ describe('reading mode headers', () => {
     const native = block('run()');
     await renderer.process(native.section, context);
     updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'none' });
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     updateSettings({ ...DEFAULT_SETTINGS, showIcon: false, showLanguage: false });
     expect(native.section.querySelector('.motto-header-copy')).toBeNull();
     expect(native.section.querySelector('.motto-header-toggle')).not.toBeNull();
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     updateSettings(DEFAULT_SETTINGS);
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     children[0]!.unload();
     expect(native.pre.className).toBe('');
     expect(native.pre.querySelector('code')).toBe(native.code);
@@ -1012,10 +1012,10 @@ describe('reading mode headers', () => {
     const header = native.section.querySelector<HTMLElement>('.motto-header')!;
     expect(header.style.getPropertyValue('--motto-light-title-color')).toBe('#abcdef');
     expect(header.querySelector('.motto-header-toggle')?.getAttribute('aria-expanded')).toBe('false');
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     expect(native.pre.querySelector('code')).toBe(native.code);
     header.click();
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     expect(native.code.firstChild).toBe(native.token);
   });
 
@@ -1028,13 +1028,13 @@ describe('reading mode headers', () => {
     const header = first.section.querySelector<HTMLElement>('.motto-header')!;
     header.querySelector<HTMLElement>('.motto-header-language')!.click();
     expect(header.querySelector('.motto-header-toggle')?.getAttribute('aria-expanded')).toBe('false');
-    expect(first.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
-    expect(second.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(first.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
+    expect(second.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     expect(first.code.firstChild).toBe(first.token);
     expect(first.pre.querySelector('button')).toBe(first.copy);
     header.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     expect(header.querySelector('.motto-header-toggle')?.getAttribute('aria-expanded')).toBe('true');
-    expect(first.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(first.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     expect(first.code.textContent).toBe('first()\n');
   });
 
@@ -1044,10 +1044,10 @@ describe('reading mode headers', () => {
     await renderer.process(native.section, context);
     native.section.querySelector<HTMLElement>('.motto-header')!.click();
     updateSettings({ ...DEFAULT_SETTINGS, showIcon: false });
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(true);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     expect(native.section.querySelector('.motto-header-toggle')?.getAttribute('aria-expanded')).toBe('false');
     updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'none' });
-    expect(native.pre.classList.contains('motto-codeblock-collapsed')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(false);
     updateSettings({ ...DEFAULT_SETTINGS });
     const header = native.section.querySelector<HTMLElement>('.motto-header')!;
     expect(header.querySelector('.motto-header-toggle')?.getAttribute('aria-expanded')).toBe('true');
@@ -1074,7 +1074,7 @@ describe('reading mode headers', () => {
     expect(native.section.querySelector('.motto-header')?.textContent).toBe('main.js');
     updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'none' });
     expect(native.section.querySelector('.motto-header')).toBeNull();
-    expect(native.pre.classList.contains('motto-codeblock')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block')).toBe(false);
     updateSettings({ ...DEFAULT_SETTINGS });
     expect(native.section.querySelector('.motto-header')).not.toBeNull();
     children[0]!.unload();
@@ -1131,7 +1131,7 @@ describe('reading mode headers', () => {
     updateSource('    same()');
     await renderer.process(native.section, context);
     expect(native.section.querySelector('.motto-header')).toBeNull();
-    expect(native.pre.classList.contains('motto-codeblock')).toBe(false);
+    expect(native.pre.classList.contains('motto-code-block')).toBe(false);
   });
 
   it('does not mount an async result after the plugin is unloaded', async () => {

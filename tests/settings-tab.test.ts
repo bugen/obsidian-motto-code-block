@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { App, Setting } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import MottoCodeblockPlugin from '../src/main';
+import MottoCodeBlockPlugin from '../src/main';
 import {
   COLOR_MODES, DEFAULT_SETTINGS, OUTPUT_TOGGLE_ICONS, parseSettings,
   type HeaderStyleSettings, type MottoSettings,
@@ -11,8 +11,8 @@ import { Notice } from './obsidian';
 
 function fixture() {
   const app = new App();
-  const plugin = new MottoCodeblockPlugin(app, {
-    id: 'motto-codeblock', name: 'Motto Code Block', version: '0.1.0',
+  const plugin = new MottoCodeBlockPlugin(app, {
+    id: 'motto-code-block', name: 'Motto Code Block', version: '0.1.0',
     minAppVersion: '1.5.0', author: '', description: '',
   });
   const saved: MottoSettings[] = [];

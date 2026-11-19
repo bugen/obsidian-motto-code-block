@@ -1,9 +1,10 @@
 {
-  "id": "motto-codeblock",
+  "id": "motto-code-block",
   "name": "Motto Code Block",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Focused code block enhancements with theme-aware headers.",
-  "author": "",
+  "author": "bugen",
+  "authorUrl": "https://github.com/bugen",
   "isDesktopOnly": false
 }

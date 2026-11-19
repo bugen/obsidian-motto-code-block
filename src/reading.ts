@@ -84,7 +84,7 @@ export class ReadingHeaders {
         mount.header?.remove();
         mount.expandFooter?.remove();
         mount.layout?.destroy();
-        pre.classList.remove('motto-codeblock', 'motto-codeblock-collapsed');
+        pre.classList.remove('motto-code-block', 'motto-code-block-collapsed');
         this.mounts.delete(pre);
         if (!this.disposed) this.renderOutputs();
       });
@@ -139,7 +139,7 @@ export class ReadingHeaders {
       mount.foldState = 'expanded';
       mount.foldOverride = undefined;
       mount.outputState = undefined;
-      pre.classList.remove('motto-codeblock', 'motto-codeblock-collapsed');
+      pre.classList.remove('motto-code-block', 'motto-code-block-collapsed');
       return;
     }
     const owner = settings.commandBlocks && mount.block.commandFrom !== undefined
@@ -151,7 +151,7 @@ export class ReadingHeaders {
       mount.expandFooter?.remove();
       mount.expandFooter = null;
       mount.foldOverride = undefined;
-      pre.classList.remove('motto-codeblock', 'motto-codeblock-collapsed');
+      pre.classList.remove('motto-code-block', 'motto-code-block-collapsed');
       const state = owner.outputState ??= initialOutputState(mount.block);
       const preview = outputPreviewLineCount(mount.block, state);
       const expand = () => {
@@ -189,7 +189,7 @@ export class ReadingHeaders {
       mount.foldState = 'expanded';
       mount.foldOverride = undefined;
     }
-    pre.classList.toggle('motto-codeblock', mount.header !== null);
+    pre.classList.toggle('motto-code-block', mount.header !== null);
     if (mount.header) pre.before(mount.header);
     this.renderBody(pre, mount);
   }
@@ -198,7 +198,7 @@ export class ReadingHeaders {
     const settings = this.getSettings();
     mount.layout?.destroy();
     mount.expandFooter?.remove();
-    pre.classList.toggle('motto-codeblock-collapsed', mount.foldState === 'folded');
+    pre.classList.toggle('motto-code-block-collapsed', mount.foldState === 'folded');
     const preview = mount.foldState === 'partial' ? previewLineCount(mount.block, settings) : undefined;
     mount.expandFooter = preview !== undefined
       ? createExpandFooter(pre.ownerDocument, mount.block.lineCount - preview, () => {

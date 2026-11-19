@@ -279,7 +279,7 @@ body.theme-dark .motto-header {
   transform: rotate(-45deg);
 }
 
-.markdown-rendered pre.motto-codeblock.motto-codeblock-collapsed {
+.markdown-rendered pre.motto-code-block.motto-code-block-collapsed {
   display: none;
 }
 
@@ -375,7 +375,7 @@ body.theme-dark .motto-expand-footer {
   margin-block-start: 1em;
 }
 
-.markdown-rendered .motto-header + pre.motto-codeblock {
+.markdown-rendered .motto-header + pre.motto-code-block {
   margin-block-start: 0;
   border-start-start-radius: 0;
   border-start-end-radius: 0;
@@ -387,7 +387,7 @@ body.theme-dark .motto-expand-footer {
   margin-block-start: 0.5em;
 }
 
-.markdown-source-view.mod-cm6 .cm-line.motto-codeblock-start {
+.markdown-source-view.mod-cm6 .cm-line.motto-code-block-start {
   border-start-start-radius: 0;
   border-start-end-radius: 0;
 }
