@@ -51,22 +51,36 @@ Add options after the language name on the opening code fence. Quote values that
 | `user:`, `host:`, `cwd:` | Set the prompt fields individually. |
 | `exclude` | Disable this plugin's enhancements for the block. |
 
-For example, `` ```python file:mandelbrot.py `` adds a file name to a Python block's header:
+For example, `file:manhattan_distance_contours.py` adds a file name to a Python block's header:
 
-![Python code block with a file name in the header](./screenshots/mandelbrot.png)
+````markdown
+```python file:manhattan_distance_contours.py
+size_x, size_y = 15, 9
+chars = "\u2588\u2593\u2592\u2591\u0020"
+
+for y in range(-size_y, size_y + 1):
+    line = ""
+    for x in range(-size_x, size_x + 1):
+        dist = abs(x) + abs(y)
+        line += chars[dist % len(chars)] * 2
+    print(line)
+```
+````
+
+![Python code block with a file name in the header](./screenshots/mdc.png)
 
 For a Command Block, combine `cmd` with an optional title and prompt. To include output, paste it into an `ansi` block directly after the shell block, with no blank line between the blocks:
 
 ````markdown
-```bash cmd title:"Plot Mandelbrot" prompt:"user@localhost"
-python mandelbrot.py
+```bash title:"Manhattan Distance Contours" prompt:bugen@localhost:/home/bugen
+python manhattan_distance_contours.py
 ```
 ```ansi
 ... pasted output ...
 ```
 ````
 
-![Command Block displaying the output of a Python script](./screenshots/plot_mandelbrot.png)
+![Command Block displaying the output of a Python script](./screenshots/mdc_plot.png)
 
 
 ## Theme and plugin compatibility
