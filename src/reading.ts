@@ -18,6 +18,7 @@ interface Mount {
   expandFooter: HTMLDivElement | null;
   layout: { destroy(): void } | null;
   outputState: OutputState | undefined;
+  wrappedCommands: Set<number>;
 }
 
 export class ReadingHeaders {
@@ -78,6 +79,7 @@ export class ReadingHeaders {
       const mount: Mount = {
         child, header: null, block, docId: context.docId, source,
         foldState: 'expanded', foldOverride: undefined, expandFooter: null, layout: null, outputState: undefined,
+        wrappedCommands: new Set(),
       };
       this.mounts.set(pre, mount);
       child.register(() => {
@@ -118,6 +120,7 @@ export class ReadingHeaders {
   }
 
   private updateBlock(mount: Mount, block: CodeBlock): void {
+    if (mount.block.text !== block.text) mount.wrappedCommands.clear();
     if (mount.block.fold !== block.fold || mount.block.previewLines !== block.previewLines) {
       mount.foldOverride = undefined;
     }
@@ -209,7 +212,7 @@ export class ReadingHeaders {
     if (settings.commandBlocks && mount.block.terminal) {
       const output = mount.block.terminal.output;
       const outputState = mount.outputState;
-      mount.layout = new ReadingCommandView(pre, mount.block, settings.outputToggleStyles,
+      mount.layout = new ReadingCommandView(pre, mount.block, mount.wrappedCommands, settings.outputToggleStyles,
         mount.foldState, preview, outputState?.open === true,
         output && outputState ? () => {
           Object.assign(outputState, nextOutputState(output, outputState));

@@ -6,8 +6,8 @@ import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState
 import { isLanguageEnabled, shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
-import { splitCommands } from './commands';
-import { ansiPreview, commandOutputPreview, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
+import { splitCommands, type CommandRange } from './commands';
+import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 
@@ -18,11 +18,14 @@ interface HeaderState {
   overrides: Map<number, FoldState>;
   outputs: Map<number, OutputState>;
   ansiEditing: Set<number>;
+  commandWraps: Map<number, boolean>;
   decorations: DecorationSet;
+  commandScrolls: DecorationSet;
 }
 
 const toggleFold = StateEffect.define<number>();
 const changeOutput = StateEffect.define<{ from: number; action: 'toggle' | 'expand' }>();
+const changeCommandWrap = StateEffect.define<{ from: number; wrap: boolean }>();
 
 class HeaderWidget extends WidgetType {
   readonly block: CodeBlock;
@@ -157,10 +160,15 @@ class CommandWidget extends WidgetType {
     marker.className = this.text === null ? 'motto-command-empty-tools' : 'motto-command-marker';
     marker.contentEditable = 'false';
     if (this.text !== null) {
-      const prompt = marker.createSpan();
-      prompt.className = 'motto-command-prompt';
-      prompt.setAttribute('aria-hidden', 'true');
-      prompt.textContent = this.prompt;
+      marker.append(commandPrompt(document, this.prompt, () => {
+        const from = view.state.doc.lineAt(view.posAtDOM(marker)).from;
+        const line = marker.closest('.cm-line');
+        const whiteSpace = line && document.defaultView?.getComputedStyle(line).whiteSpace;
+        const wrapping = line?.classList.contains('motto-command-wrap') ||
+          (!line?.classList.contains('motto-command-nowrap') &&
+            (whiteSpace ? whiteSpace !== 'pre' && whiteSpace !== 'nowrap' : view.lineWrapping));
+        view.dispatch({ effects: changeCommandWrap.of({ from, wrap: !wrapping }) });
+      }));
     }
     marker.append(commandTools(document, this.text, this.open, this.styles, this.output ? () => {
       view.dispatch({ effects: changeOutput.of({ from: this.from, action: 'toggle' }), selection: { anchor: this.from } });
@@ -314,9 +322,10 @@ function foldedBlocks(
 
 function decorate(
   blocks: CodeBlock[], settings: MottoSettings, folds: Map<number, FoldState>, state: EditorState,
-  outputs: Map<number, OutputState>, ansiEditing: Set<number>,
-): DecorationSet {
+  outputs: Map<number, OutputState>, ansiEditing: Set<number>, commandWraps: Map<number, boolean>,
+): Pick<HeaderState, 'decorations' | 'commandScrolls'> {
   const decorations: Range<Decoration>[] = [];
+  const commandScrolls: Range<Decoration>[] = [];
   for (const block of blocks) {
     if (settings.commandBlocks && block.commandFrom !== undefined) continue;
     const foldState = folds.get(block.from) ?? 'expanded';
@@ -358,12 +367,25 @@ function decorate(
       const open = outputState?.open === true;
       const count = preview ?? block.lineCount;
       const lastCommand = commands[commands.length - 1];
+      let commandIndex = 0;
+      let command: CommandRange | undefined = commands[0];
+      let wrap: boolean | undefined;
       for (let line = 0; line < count; line++) {
+        const { from, to } = state.doc.line(block.startLine + line + 2);
+        if (command && line > command.endLine) {
+          command = commands[++commandIndex];
+          wrap = undefined;
+        }
+        if (command?.startLine === line) wrap = commandWraps.get(from);
         const withToggle = output !== undefined && lastCommand?.startLine === line && lastCommand.endLine < count;
         decorations.push(Decoration.line({ attributes: {
-          class: `motto-command-line${withToggle ? ` ${outputToggleClasses(settings.outputToggleStyles)}` : ''}`,
+          class: `motto-command-line${wrap === undefined ? '' : wrap ? ' motto-command-wrap' : ' motto-command-nowrap'}` +
+            (withToggle ? ` ${outputToggleClasses(settings.outputToggleStyles)}` : ''),
           style: `--motto-command-tools-width: ${withToggle ? '68px' : '36px'}`,
-        } }).range(state.doc.line(block.startLine + line + 2).from));
+        } }).range(from));
+        if (wrap === false && from < to) {
+          commandScrolls.push(Decoration.mark({ class: 'motto-command-scroll' }).range(from, to));
+        }
       }
       for (const [index, command] of commands.entries()) {
         if (command.startLine >= count) continue;
@@ -409,7 +431,10 @@ function decorate(
       decorations.push(Decoration.widget({ widget: new LineNumberWidget(number), side: -1 }).range(from));
     }
   }
-  return Decoration.set(decorations, true);
+  return {
+    decorations: Decoration.set(decorations, true),
+    commandScrolls: Decoration.set(commandScrolls, true),
+  };
 }
 
 export function createEditorHeaders(getSettings: () => MottoSettings): { extension: Extension; refresh: () => void } {
@@ -431,20 +456,29 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
       const folds = foldedBlocks(blocks, settings, state, overrides);
       const outputs = outputStates(blocks, settings, state);
       const ansiEditing = editingAnsiBlocks(blocks, settings, state);
+      const commandWraps = new Map<number, boolean>();
       return {
-        livePreview, blocks, folds, overrides, outputs, ansiEditing,
-        decorations: decorate(blocks, settings, folds, state, outputs, ansiEditing),
+        livePreview, blocks, folds, overrides, outputs, ansiEditing, commandWraps,
+        ...decorate(blocks, settings, folds, state, outputs, ansiEditing, commandWraps),
       };
     },
     update(previous, transaction) {
       const livePreview = transaction.state.field(editorLivePreviewField, false) === true;
       const reparse = transaction.docChanged || livePreview !== previous.livePreview ||
         transaction.effects.some((effect) => effect.is(refresh));
-      if (!reparse && !transaction.effects.some((effect) => effect.is(toggleFold) || effect.is(changeOutput)) &&
+      if (!reparse && !transaction.effects.some((effect) =>
+        effect.is(toggleFold) || effect.is(changeOutput) || effect.is(changeCommandWrap)) &&
           !(transaction.selection && (previous.folds.size > 0 || previous.outputs.size > 0 ||
             previous.blocks.some((block) => block.language === 'ansi')))) return previous;
       const blocks = reparse ? readBlocks(livePreview, transaction.state.doc.toString()) : previous.blocks;
       const settings = getSettings();
+      const commandWraps = new Map<number, boolean>();
+      if (livePreview && settings.commandBlocks) {
+        for (const [from, wrap] of previous.commandWraps) {
+          const mapped = transaction.changes.mapPos(from, 1, MapMode.TrackAfter);
+          if (mapped !== null) commandWraps.set(transaction.state.doc.lineAt(mapped).from, wrap);
+        }
+      }
       const visibleBlocks = blocks.filter((block) =>
         !(settings.commandBlocks && block.commandFrom !== undefined) &&
         shouldShowHeader(settings.headerDisplay, block.hasParameters));
@@ -481,6 +515,10 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
         if (mapped !== null) mappedAnsiEditing.add(mapped);
       }
       for (const effect of transaction.effects) {
+        if (effect.is(changeCommandWrap)) {
+          commandWraps.set(effect.value.from, effect.value.wrap);
+          continue;
+        }
         if (effect.is(changeOutput)) {
           const output = outputs.get(effect.value.from);
           const block = blocks.find((candidate) => candidate.from === effect.value.from)?.terminal?.output;
@@ -499,11 +537,15 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
       }
       const ansiEditing = editingAnsiBlocks(blocks, settings, transaction.state, mappedAnsiEditing);
       return {
-        livePreview, blocks, folds, overrides, outputs, ansiEditing,
-        decorations: decorate(blocks, settings, folds, transaction.state, outputs, ansiEditing),
+        livePreview, blocks, folds, overrides, outputs, ansiEditing, commandWraps,
+        ...decorate(blocks, settings, folds, transaction.state, outputs, ansiEditing, commandWraps),
       };
     },
-    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+    provide: (field) => [
+      EditorView.decorations.from(field, (value) => value.decorations),
+      // Keep the scroll container outside syntax marks, including in older CodeMirror hosts.
+      Prec.lowest((EditorView.outerDecorations ?? EditorView.decorations).from(field, (value) => value.commandScrolls)),
+    ],
   });
   return {
     extension: [

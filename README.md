@@ -34,6 +34,8 @@ Code blocks adapt to your active Obsidian theme's colors and styling, in both li
 
 Command Block presents shell commands and their output in a terminal-style layout. Copy individual commands without prompts, show or hide output with a click, and display ANSI-colored output. Commands are displayed, not executed.
 
+Click a command's `$` or `#` prompt to toggle line wrapping for that command, including any continuation lines. With wrapping off, scroll horizontally to read long lines.
+
 ![Command Block with shell commands and output](./screenshots/command_block_lvs.png)
 
 ## Extended syntax

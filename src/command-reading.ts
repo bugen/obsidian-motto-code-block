@@ -1,6 +1,6 @@
 import type { CodeBlock } from './codeblock';
 import { splitCommands } from './commands';
-import { cloneCodeRange, commandOutputPreview, commandTools, setOutputToggle } from './command-render';
+import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, setOutputToggle } from './command-render';
 import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
@@ -14,7 +14,7 @@ export class ReadingCommandView {
   private open: boolean;
 
   constructor(
-    pre: HTMLElement, block: CodeBlock, styles: MottoSettings['outputToggleStyles'],
+    pre: HTMLElement, block: CodeBlock, wrappedCommands: Set<number>, styles: MottoSettings['outputToggleStyles'],
     foldState: FoldState, preview: number | undefined,
     open: boolean, toggle?: () => void, tapMyHippo = false, spacing: CommandSpacing = DEFAULT_SETTINGS.commandSpacing,
   ) {
@@ -50,10 +50,11 @@ export class ReadingCommandView {
         if (command.from >= cutoff) continue;
         const row = view.createDiv();
         row.className = 'motto-command-row';
-        const prompt = row.createSpan();
-        prompt.className = 'motto-command-prompt';
-        prompt.setAttribute('aria-hidden', 'true');
-        prompt.textContent = block.terminal?.user === 'root' ? '#' : '$';
+        row.classList.toggle('motto-command-wrap', wrappedCommands.has(command.from));
+        row.append(commandPrompt(document, block.terminal?.user === 'root' ? '#' : '$', () => {
+          if (row.classList.toggle('motto-command-wrap')) wrappedCommands.add(command.from);
+          else wrappedCommands.delete(command.from);
+        }));
         const commandPre = row.createEl('pre');
         const commandCode = commandPre.createEl('code');
         commandCode.className = code.className;

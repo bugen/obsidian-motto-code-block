@@ -495,6 +495,32 @@ describe('reading mode headers', () => {
     expect(ansi.code.textContent).toBe(`${output}\n`);
   });
 
+  it('toggles wrapping for just the clicked command without opening output or changing copied text', async () => {
+    const command = 'printf \\\n  "hello"';
+    const commands = `pwd\n${command}`;
+    const { renderer, context, updateSettings } = fixture(`\`\`\`sh\n${commands}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``);
+    const shell = block(commands, 'sh');
+    const ansi = block('/srv', 'ansi');
+    await renderer.process(shell.section, context);
+    await renderer.process(ansi.section, context);
+    const rows = () => [...shell.section.querySelectorAll('.motto-command-row')];
+    const prompt = () => rows()[1]!.querySelector<HTMLButtonElement>('.motto-command-prompt')!;
+    const wrapped = () => rows().map((row) => row.classList.contains('motto-command-wrap'));
+    expect(prompt().textContent).toBe('$');
+    expect(wrapped()).toEqual([false, false]);
+    prompt().click();
+    expect(wrapped()).toEqual([false, true]);
+    expect(ansi.section.querySelector('.motto-command-output')).toBeNull();
+    updateSettings({ ...DEFAULT_SETTINGS, commandSpacing: 'large' });
+    expect(wrapped()).toEqual([false, true]);
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    rows()[1]!.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(command);
+    prompt().click();
+    expect(wrapped()).toEqual([false, false]);
+    expect(shell.code.textContent).toBe(`${commands}\n`);
+  });
+
   it.each(['expand', 'unfold'])('pairs separately rendered output-first sections and honors ANSI %s', async (option) => {
     const { renderer, context, children } = fixture(`\`\`\`sh\npwd\n\`\`\`\n\`\`\`ansi ${option}\n/srv/app\n\`\`\``);
     const shell = block('pwd', 'sh');

@@ -85,6 +85,31 @@ describe('live preview headers', () => {
     expect(view.state.doc.toString()).toBe(doc.replace('```json', '```xml'));
   });
 
+  it('toggles wrapping for a command and its continuation without editing or toggling output', () => {
+    const doc = 'Intro\n\n```sh user:root\npwd\nprintf \\\n  "hello"\n```\n```ansi\n/srv\n```';
+    const { view, headers } = fixture(true, doc);
+    const prompts = () => [...view.dom.querySelectorAll<HTMLButtonElement>('.motto-command-prompt')];
+    const lines = () => [...view.dom.querySelectorAll('.motto-command-line')];
+    const wrapped = () => lines().map((line) => line.classList.contains('motto-command-wrap'));
+    const output = view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    const start = view.state.selection;
+    expect(prompts()[1]?.textContent).toBe('#');
+    expect(prompts()[1]?.getAttribute('aria-label')).toBe('Toggle command wrapping');
+    expect(prompts()[1]?.hasAttribute('title')).toBe(false);
+    expect(wrapped()).toEqual([false, false, false]);
+    prompts()[1]!.click();
+    expect(wrapped()).toEqual([false, true, true]);
+    expect(output.getAttribute('aria-expanded')).toBe('false');
+    expect(view.state.selection.eq(start)).toBe(true);
+    expect(view.state.doc.toString()).toBe(doc);
+    view.dispatch({ changes: { from: 0, insert: 'Preface\n' } });
+    headers.refresh();
+    expect(wrapped()).toEqual([false, true, true]);
+    prompts()[1]!.click();
+    expect(wrapped()).toEqual([false, false, false]);
+    expect(lines()[1]?.classList.contains('motto-command-nowrap')).toBe(true);
+  });
+
   it('spaces only visible command boundaries and preserves continuations, copies and output focus on refresh', () => {
     const commands = 'printf \\\n  "hello"\npwd\nwhoami';
     const doc = `Intro\n\n\`\`\`bash cmd\n${commands}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``;

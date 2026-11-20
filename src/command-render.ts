@@ -8,6 +8,21 @@ import hippoIcon from './hippo.svg';
 import { replyToHippo, updateHippoSpeech } from './hippo-speech';
 import { createEl, createFragment } from './dom';
 
+export function commandPrompt(
+  document: Document, symbol: string, toggleWrap: () => void,
+): HTMLButtonElement {
+  const prompt = createEl(document, 'button');
+  prompt.type = 'button';
+  prompt.className = 'motto-command-prompt';
+  prompt.textContent = symbol;
+  prompt.setAttribute('aria-label', 'Toggle command wrapping');
+  prompt.addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleWrap();
+  });
+  return prompt;
+}
+
 export function commandCopyButton(document: Document, text: string, label: string): HTMLButtonElement {
   const button = createEl(document, 'button');
   button.className = 'motto-command-button motto-command-copy';
