@@ -23,16 +23,33 @@ export function commandPrompt(
   return prompt;
 }
 
-export function commandCopyButton(document: Document, text: string, label: string): HTMLButtonElement {
+function copyButton(document: Document, text: string, label: string): HTMLButtonElement {
   const button = createEl(document, 'button');
-  button.className = 'motto-command-button motto-command-copy';
+  button.className = 'motto-command-button';
   button.type = 'button';
   button.setAttribute('aria-label', label);
-  setIcon(button, 'copy');
   button.addEventListener('click', (event) => {
     event.stopPropagation();
     void copyCode(document, text);
   });
+  return button;
+}
+
+export function commandCopyButton(document: Document, text: string, label: string): HTMLButtonElement {
+  const button = copyButton(document, text, label);
+  button.classList.add('motto-command-copy');
+  setIcon(button, 'copy');
+  return button;
+}
+
+function rawOutputCopyButton(document: Document, text: string): HTMLButtonElement {
+  const button = copyButton(document, text, 'Copy raw output (including ANSI escape sequences)');
+  button.classList.add('motto-raw-copy');
+  for (const letter of 'RAW') {
+    const span = button.createSpan();
+    span.textContent = letter;
+    span.setAttribute('aria-hidden', 'true');
+  }
   return button;
 }
 
@@ -143,6 +160,10 @@ export function commandOutput(
       event.stopPropagation();
       edit();
     });
+  }
+  if (language === 'ansi') {
+    output.classList.add('motto-output-has-raw');
+    tools.append(rawOutputCopyButton(document, text));
   }
   tools.append(commandCopyButton(document, language === 'ansi' ? ansiText(text) : text, 'Copy output'));
   const pre = output.createEl('pre');

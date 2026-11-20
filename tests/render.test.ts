@@ -29,6 +29,7 @@ describe('header display', () => {
       expect(code.querySelectorAll('.token').length > 0).toBe(language !== 'text');
     });
     expect(code.querySelector('img, script, a')).toBeNull();
+    expect(preview.element.querySelector('.motto-raw-copy')).toBeNull();
     preview.element.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
     expect(write).toHaveBeenLastCalledWith(text);
     preview.destroy();
@@ -123,7 +124,30 @@ describe('header display', () => {
     try {
       const style = getComputedStyle(output.querySelector('pre')!);
       expect(editable ? style.paddingBlockStart : style.paddingTop).toBe(editable ? '26px' : '0px');
+      expect(getComputedStyle(output).paddingRight).toBe(editable ? '43px' : '83px');
     } finally {
+      output.remove();
+      stylesheet.remove();
+    }
+  });
+
+  it.each([
+    ['light', ['#b91c1c', '#166534', '#1d4ed8']],
+    ['dark', ['#fca5a5', '#86efac', '#93c5fd']],
+  ] as const)('displays the RAW label in red, green, and blue in the %s theme', (mode, colors) => {
+    const stylesheet = document.createElement('style');
+    stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
+    const output = commandOutput(document, 'output');
+    const previousClass = document.body.className;
+    document.body.className = `theme-${mode}`;
+    document.head.append(stylesheet);
+    document.body.append(output);
+    try {
+      const letters = [...output.querySelectorAll('.motto-raw-copy > span')];
+      expect(letters.map((letter) => letter.textContent)).toEqual(['R', 'A', 'W']);
+      expect(letters.map((letter) => getComputedStyle(letter).color)).toEqual(colors);
+    } finally {
+      document.body.className = previousClass;
       output.remove();
       stylesheet.remove();
     }
@@ -189,7 +213,8 @@ describe('header display', () => {
       header,
     );
     expect([...controls.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Show output', 'Copy command', 'Edit source', 'Copy output', 'Copy code block', 'Run: toggle code block',
+      'Show output', 'Copy command', 'Edit source', 'Copy raw output (including ANSI escape sequences)',
+      'Copy output', 'Copy code block', 'Run: toggle code block',
     ]);
     for (const state of ['expanded', 'folded', 'partial'] as const) {
       setHeaderFoldState(header, state);

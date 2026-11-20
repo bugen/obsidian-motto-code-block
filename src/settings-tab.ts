@@ -194,7 +194,7 @@ export class MottoSettingsTab extends PluginSettingTab {
     const noCommands = () => !this.motto.settings.commandBlocks;
     const output = this.section(commands, 'Output', 3);
     this.addLanguageList(output, 'outputLanguages', 'Output languages',
-      'Fence languages treated as command output when immediately after a configured command block. Default: ansi. Add text, json or xml as needed. Separate with commas, spaces or new lines; case-insensitive, exact names only. Use plaintext for unlabelled blocks. Language eligibility and exclude still apply. Empty disables output pairing.',
+      'Fence languages treated as command output when immediately after a configured command block. Default: ansi and plaintext, which includes unlabelled blocks. Add text, json or xml as needed. Separate with commas, spaces or new lines; case-insensitive, exact names only. Language eligibility and exclude still apply. Empty disables output pairing.',
       noCommands);
     this.addThemeGroup(output, (parent, mode, refresh) => this.addOutputToggleAppearance(parent, mode, refresh));
     this.addToggle(output, 'tapMyHippo', 'Tap my hip-po!',

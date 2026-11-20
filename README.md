@@ -41,6 +41,8 @@ Click a command's prompt to toggle line wrapping for that command, including any
 
 ![Command Block with shell commands and output](./screenshots/command_block_lvs.png)
 
+Standalone `ansi` blocks show the ANSI logo when their header and icons are enabled. In any `ansi` preview, the copy icon copies plain text; **RAW** copies the full text with ANSI escape sequences.
+
 ## Extended syntax
 
 Add options after the language name on the opening code fence. Quote values that contain spaces.
@@ -74,7 +76,7 @@ for y in range(-size_y, size_y + 1):
 
 ![Python code block with a file name in the header](./screenshots/mdc.png)
 
-For a Command Block, combine `cmd` with an optional title and prompt. To include output, paste it into an `ansi` block directly after the shell block, with no blank line between the blocks:
+For a Command Block, combine `cmd` with an optional title and prompt. Place output directly after the shell block, with no blank line between them. By default, `ansi`, `plaintext`, and unlabelled fences can serve as output:
 
 ````markdown
 ```bash title:"Manhattan Distance Contours" prompt:bugen@localhost:/home/bugen

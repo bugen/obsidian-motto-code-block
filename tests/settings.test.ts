@@ -17,18 +17,18 @@ describe('saved settings', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"commandLanguages"'));
   });
 
-  it('defaults output languages to ANSI, normalizes saved lists and preserves an empty list', () => {
+  it('normalizes saved output languages and preserves an empty list', () => {
     const defaults = parseSettings({});
-    expect(defaults.outputLanguages).toEqual(['ansi']);
+    expect(defaults.outputLanguages).toEqual(['ansi', 'plaintext']);
     const settings = parseSettings({ outputLanguages: [' ANSI,Text ', 'JSON\nxml', 'json'] });
     expect(settings.outputLanguages).toEqual(['ansi', 'text', 'json', 'xml']);
     expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
     expect(parseSettings({ outputLanguages: [] }).outputLanguages).toEqual([]);
     defaults.outputLanguages.length = 0;
-    expect(parseSettings(null).outputLanguages).toEqual(['ansi']);
+    expect(parseSettings(null).outputLanguages).toEqual(['ansi', 'plaintext']);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     for (const outputLanguages of ['ansi,json', null, ['json', 1]]) {
-      expect(parseSettings({ outputLanguages }).outputLanguages).toEqual(['ansi']);
+      expect(parseSettings({ outputLanguages }).outputLanguages).toEqual(['ansi', 'plaintext']);
     }
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"outputLanguages"'));
   });

@@ -74,7 +74,7 @@ export const DEFAULT_SETTINGS: Readonly<MottoSettings> = {
   headerDisplay: 'default',
   commandBlocks: true,
   commandLanguages: [...DEFAULT_COMMAND_LANGUAGES],
-  outputLanguages: ['ansi'],
+  outputLanguages: ['ansi', 'plaintext'],
   commandSpacing: 'middle',
   tapMyHippo: false,
   showIcon: true,

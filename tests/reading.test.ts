@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import ansiIcon from '../src/ansi.svg';
 import { ReadingHeaders } from '../src/reading';
 import { DEFAULT_SETTINGS, parseSettings, type MottoSettings } from '../src/settings';
 
@@ -409,6 +410,7 @@ describe('reading mode headers', () => {
       const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
       await renderer.process(native.section, context);
       expect(native.section.querySelector('.motto-header-title')?.textContent).toBe('テスト');
+      expect(native.section.querySelector('.motto-header .motto-language-icon')?.getAttribute('src')).toBe(ansiIcon);
       expect(native.section.querySelector('.motto-ansi-standalone code')?.textContent).toBe('XXXXXXXXXXXX');
       expect(native.section.querySelector('.motto-command-output, .motto-command-prompt, .motto-output-toggle')).toBeNull();
       expect(native.code.firstChild).toBe(native.token);
@@ -445,7 +447,7 @@ describe('reading mode headers', () => {
     expect(native.section.querySelector('.motto-ansi-standalone code')?.textContent).toBe('first\nsecond');
   });
 
-  it('applies partial previews and line numbers to standalone ANSI and copies the full plain text', async () => {
+  it('copies full plain or raw standalone ANSI from a partial preview without expanding it', async () => {
     const content = '\x1b[31mfirst\nsecond\nthird\x1b[0m';
     const { renderer, context } = fixture(`\`\`\`ansi title:Log expand:1\n${content}\n\`\`\``);
     const native = block(content, 'ansi');
@@ -458,6 +460,11 @@ describe('reading mode headers', () => {
     expect(native.pre.querySelector('.motto-line-number')).toBeNull();
     native.section.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
     expect(write).toHaveBeenLastCalledWith('first\nsecond\nthird');
+    const raw = native.section.querySelector<HTMLButtonElement>('.motto-raw-copy')!;
+    expect(raw.nextElementSibling?.classList.contains('motto-command-copy')).toBe(true);
+    raw.click();
+    expect(write).toHaveBeenLastCalledWith(content);
+    expect(preview.classList.contains('motto-partial-codeblock')).toBe(true);
     native.section.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
     expect(native.section.querySelector('.motto-partial-codeblock, .motto-expand-button')).toBeNull();
     expect(native.section.querySelectorAll('.motto-line-number')).toHaveLength(3);

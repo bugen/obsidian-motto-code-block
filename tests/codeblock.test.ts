@@ -25,12 +25,18 @@ describe('command blocks', () => {
     ]) expect(parse(source, configuration).blocks[0]?.terminal).toBeUndefined();
   });
 
-  it('matches output language aliases independently and uses plaintext for unlabelled output', () => {
+  it('matches output language aliases independently', () => {
     const source = '```sh\npwd\n```\n```txt\n/work\n```';
+    expect(parseCodeBlocks(source).blocks[0]?.terminal).toBeUndefined();
     expect(parseCodeBlocks(source, { ...DEFAULT_SETTINGS, outputLanguages: ['text'] }).blocks[0]?.terminal).toBeUndefined();
     expect(parseCodeBlocks(source, { ...DEFAULT_SETTINGS, outputLanguages: ['txt'] }).blocks[0]?.terminal?.output).toBeDefined();
-    const unlabelled = source.replace('```txt', '```');
-    expect(parseCodeBlocks(unlabelled, { ...DEFAULT_SETTINGS, outputLanguages: ['plaintext'] }).blocks[0]?.terminal?.output).toBeDefined();
+  });
+
+  it.each(['plaintext', ''])('pairs %j output by default but respects a saved ANSI-only list', (language) => {
+    const source = `\`\`\`sh\npwd\n\`\`\`\n\`\`\`${language}\n/work\n\`\`\``;
+    const { blocks } = parseCodeBlocks(source);
+    expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
+    expect(parseCodeBlocks(source, parseSettings({ outputLanguages: ['ansi'] })).blocks[0]?.terminal).toBeUndefined();
   });
 
   it('does not let a shell claimed as output also consume a subsequent output block', () => {

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <title>ANSI</title>
+  <path fill="#080808" stroke="#fff" stroke-width="6" paint-order="stroke" d="M31 5h49v4h4v39h-4v4h-4v4H26v-1h-4V12h5V9h4z
+    M15 59h63v22H15z M8 84h70v4h-4v4H8z
+    M88 48h4v27h-4v4h-4v3h-3V55h3v-4h4z"/>
+  <path fill="#fff" d="M31 21h37v26H31z M76 9h4v4h-4z M72 13h4v4h-4z
+    M47 64h26v3h-4v3h-4v-3H47z M9 74h4v8H9z"/>
+  <g stroke="#fff" stroke-width="2" paint-order="stroke">
+    <path fill="#f40009" fill-rule="evenodd" d="M8 68h6v4h1v4h1v4h1v4h1v2h-6v-2h1v-3H9v3h1v2H4v-2h1v-3h1v-4h1v-4h1v-3H8z
+      M10 74v4H9v1h3v-1h-1v-4z"/>
+    <path fill="#00a746" d="M20 68h4v2h1v2h1v2h1v2h1v1h1v-7h-1v-2h5v2h-1v16h-4v-2h-1v-2h-1v-2h-1v-2h-1v6h1v2h-5v-2h1V70h-1z"/>
+    <path fill="#0068c1" d="M38 68h6v1h1v1h1v4h-3v-2h-1v-2h-2v4h1v1h1v1h1v1h1v1h1v1h1v5h-1v1h-1v1h-6v-1h-1v-1h-1v-3h3v1h1v2h2v-3h-1v-1h-1v-1h-1v-1h-1v-1h-1v-1h-1v-6h1v-1h1z"/>
+    <path fill="#ffef00" d="M49 68h6v2h-1v14h1v2h-6v-2h1V70h-1z"/>
+  </g>
+</svg>

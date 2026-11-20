@@ -5,6 +5,7 @@ import { EditorSelection, EditorState, StateEffect } from '@codemirror/state';
 import { EditorView, keymap, runScopeHandlers } from '@codemirror/view';
 import { editorLivePreviewField } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import ansiIcon from '../src/ansi.svg';
 import { createEditorHeaders } from '../src/editor';
 import { DEFAULT_SETTINGS, parseSettings, type MottoSettings } from '../src/settings';
 import { setLivePreview } from './obsidian';
@@ -59,10 +60,11 @@ describe('live preview headers', () => {
   });
 
   it('only uses a configured ANSI fence as a command when it meets the activation conditions', () => {
-    const doc = 'Intro\n\n```ansi cmd\nrun\n```\n\n```ansi\noutput\n```';
+    const doc = 'Intro\n\n```ansi cmd title:Command\nrun\n```\n\n```ansi\noutput\n```';
     const settings = parseSettings({ commandLanguages: ['ansi'] });
     const { view } = fixture(true, doc, settings);
     expect(view.dom.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    expect(view.dom.querySelector('.motto-command-header .motto-language-icon')?.getAttribute('src')).toBe(ansiIcon);
     expect([...view.dom.querySelectorAll('.motto-ansi-standalone code')].map((code) => code.textContent))
       .toEqual(['output']);
   });
@@ -378,6 +380,7 @@ describe('live preview headers', () => {
     const { view } = fixture(true, doc, { ...DEFAULT_SETTINGS, showHeaderCopyButton: true });
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
     expect(view.dom.querySelector('.motto-header-title')?.textContent).toBe('テスト');
+    expect(view.dom.querySelector('.motto-header .motto-language-icon')?.getAttribute('src')).toBe(ansiIcon);
     expect(view.dom.querySelector('.motto-ansi-standalone code')?.textContent).toBe('XXXXXXXXXXXX');
     expect(view.contentDOM.textContent).not.toContain('```ansi');
     expect(view.dom.querySelector('.motto-header')?.nextElementSibling)
@@ -570,6 +573,9 @@ describe('live preview headers', () => {
     expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('UNIQUE OUTPUT');
     view.dom.querySelector<HTMLButtonElement>('.motto-output-tools .motto-command-copy')!.click();
     expect(write).toHaveBeenLastCalledWith('UNIQUE OUTPUT');
+    view.dom.querySelector<HTMLButtonElement>('.motto-command-output .motto-raw-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(output);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
     const from = doc.indexOf('pwd');
     view.dispatch({ changes: { from, to: from + 3, insert: 'whoami' } });
     view.dom.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();

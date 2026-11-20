@@ -216,7 +216,7 @@ describe('settings tab', () => {
       ['Show header copy button', true, false],
       ['Command spacing', 'large', 'middle'],
       ['Partial preview lines', '3', '5'],
-      ['Output languages', 'text', 'ansi'],
+      ['Output languages', 'text', 'ansi\nplaintext'],
     ] as const) {
       change(name, value);
       await vi.waitFor(() => { expect(modified(name)).toBe(true); });
@@ -450,7 +450,7 @@ describe('settings tab', () => {
 
   it('saves and resets output languages independently of language eligibility', async () => {
     const { plugin, saved, row, change, reset } = fixture();
-    expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi');
+    expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi\nplaintext');
     change('Output languages', 'ANSI, Text\nJSON xml json');
     await vi.waitFor(() => {
       expect(saved[saved.length - 1]).toEqual({
@@ -462,7 +462,7 @@ describe('settings tab', () => {
     reset('Output languages');
     await vi.waitFor(() => {
       expect(saved[saved.length - 1]).toEqual(DEFAULT_SETTINGS);
-      expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi');
+      expect(row('Output languages').querySelector('textarea')?.value).toBe('ansi\nplaintext');
     });
   });
 

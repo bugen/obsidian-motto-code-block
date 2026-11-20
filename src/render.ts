@@ -3,6 +3,7 @@ import type { CodeBlock } from './codeblock';
 import { languages, type LanguageDefinition } from './languages';
 import { COLOR_MODES, shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createEl } from './dom';
+import ansiIcon from './ansi.svg';
 
 const languagesByAlias = new Map<string, LanguageDefinition>();
 const languagesByLabel = new Map<string, LanguageDefinition>();
@@ -14,6 +15,7 @@ for (const [id, definition] of Object.entries(languages)) {
 export function languagePresentation(language: string): { label: string; icon: string | null } {
   const normalized = language.toLowerCase();
   const label = normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Plain text';
+  if (normalized === 'ansi') return { label, icon: ansiIcon };
   const definition = languagesByAlias.get(normalized) ?? languagesByLabel.get(label);
   return { label: definition?.label ?? label, icon: definition?.icon ?? null };
 }
@@ -102,7 +104,7 @@ export function createHeader(
     const icon = header.createSpan();
     icon.className = 'motto-header-icon';
     icon.setAttribute('aria-hidden', 'true');
-    if (terminal && block.language.toLowerCase() !== 'powershell') {
+    if (terminal && !['powershell', 'ansi'].includes(block.language.toLowerCase())) {
       const mark = icon.createSpan();
       mark.className = 'motto-terminal-icon';
       mark.style.maskImage = `url(${JSON.stringify(languages.shell.icon)})`;
