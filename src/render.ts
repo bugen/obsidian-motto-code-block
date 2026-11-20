@@ -102,7 +102,7 @@ export function createHeader(
     const icon = header.createSpan();
     icon.className = 'motto-header-icon';
     icon.setAttribute('aria-hidden', 'true');
-    if (terminal) {
+    if (terminal && block.language.toLowerCase() !== 'powershell') {
       const mark = icon.createSpan();
       mark.className = 'motto-terminal-icon';
       mark.style.maskImage = `url(${JSON.stringify(languages.shell.icon)})`;

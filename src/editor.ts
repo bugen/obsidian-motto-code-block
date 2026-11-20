@@ -6,7 +6,7 @@ import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState
 import { isLanguageEnabled, shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
-import { splitCommands, type CommandRange } from './commands';
+import { commandPromptSymbol, splitCommands, type CommandRange } from './commands';
 import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
@@ -361,7 +361,8 @@ function decorate(
     }
     if (settings.commandBlocks && block.terminal) {
       decorations.push(Decoration.line({ class: 'motto-command-start' }).range(block.from));
-      const commands = splitCommands(block.text);
+      const commands = splitCommands(block.text, block.language);
+      const prompt = commandPromptSymbol(block.language, block.terminal.user);
       const output = block.terminal.output;
       const outputState = outputs.get(block.from);
       const open = outputState?.open === true;
@@ -396,8 +397,7 @@ function decorate(
           }).range(state.doc.line(block.startLine + command.endLine + 2).from));
         }
         decorations.push(Decoration.widget({
-          widget: new CommandWidget(block.from, block.text.slice(command.from, command.to),
-            block.terminal.user === 'root' ? '#' : '$',
+          widget: new CommandWidget(block.from, block.text.slice(command.from, command.to), prompt,
             output !== undefined && index === commands.length - 1 && command.endLine < count, open,
             settings.outputToggleStyles, settings.tapMyHippo),
           side: -1,

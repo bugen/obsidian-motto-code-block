@@ -495,18 +495,21 @@ describe('reading mode headers', () => {
     expect(ansi.code.textContent).toBe(`${output}\n`);
   });
 
-  it('toggles wrapping for just the clicked command without opening output or changing copied text', async () => {
-    const command = 'printf \\\n  "hello"';
-    const commands = `pwd\n${command}`;
-    const { renderer, context, updateSettings } = fixture(`\`\`\`sh\n${commands}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``);
-    const shell = block(commands, 'sh');
+  it.each([
+    ['sh', 'pwd', 'printf \\\n  "hello"', '$'],
+    ['powershell', 'Get-Location', 'Get-ChildItem `\n  -Force', '>'],
+  ])('toggles wrapping for just the clicked %s command without opening output or changing copied text', async (language, first, command, symbol) => {
+    const commands = `${first}\n${command}`;
+    const { renderer, context, updateSettings } = fixture(`\`\`\`${language}\n${commands}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``);
+    const shell = block(commands, language);
     const ansi = block('/srv', 'ansi');
     await renderer.process(shell.section, context);
     await renderer.process(ansi.section, context);
     const rows = () => [...shell.section.querySelectorAll('.motto-command-row')];
     const prompt = () => rows()[1]!.querySelector<HTMLButtonElement>('.motto-command-prompt')!;
     const wrapped = () => rows().map((row) => row.classList.contains('motto-command-wrap'));
-    expect(prompt().textContent).toBe('$');
+    expect(rows().map((row) => row.querySelector('code')?.textContent)).toEqual([first, command]);
+    expect(prompt().textContent).toBe(symbol);
     expect(wrapped()).toEqual([false, false]);
     prompt().click();
     expect(wrapped()).toEqual([false, true]);

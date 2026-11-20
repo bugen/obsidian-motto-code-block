@@ -42,7 +42,7 @@ describe('command blocks', () => {
     expect(blocks[2]?.commandFrom).toBeUndefined();
   });
 
-  it.each(['sh', 'bash', 'zsh', 'csh', 'fish'])('recognizes explicit command flags for %s without metadata or output', (language) => {
+  it.each(['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell'])('recognizes explicit command flags for %s without metadata or output', (language) => {
     for (const flag of ['cmd', 'COMMAND']) {
       const { blocks, diagnostics } = parseCodeBlocks(`\`\`\`${language} ${flag}\npwd\n\`\`\``);
       expect(blocks[0]?.terminal).toEqual({});
@@ -171,7 +171,7 @@ describe('command blocks', () => {
     }]);
   });
 
-  it.each(['sh', 'bash', 'zsh', 'csh', 'fish'])('pairs adjacent %s and ANSI blocks with a shared output', (language) => {
+  it.each(['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell'])('pairs adjacent %s and ANSI blocks with a shared output', (language) => {
     const { blocks } = parseCodeBlocks(`\`\`\`${language}\npwd\nuname -s\n\`\`\`\n\`\`\`ansi expand\nLinux\n\`\`\``);
     expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
     expect(blocks[1]?.commandFrom).toBe(blocks[0]?.from);
@@ -199,7 +199,16 @@ describe('command blocks', () => {
     ['\nfirst\n\nsecond\n\n', ['first', 'second']],
     [' \n\n', []],
   ])('splits commands and preserves continuations in %j', (text, expected) => {
-    expect(splitCommands(text).map(({ from, to }) => text.slice(from, to))).toEqual(expected);
+    expect(splitCommands(text, 'bash').map(({ from, to }) => text.slice(from, to))).toEqual(expected);
+  });
+
+  it.each([
+    ['Get-ChildItem `\n  -Force\nGet-Location', ['Get-ChildItem `\n  -Force', 'Get-Location']],
+    ['Write-Output ``\nGet-Location', ['Write-Output ``', 'Get-Location']],
+    ['Get-ChildItem ` \nGet-Location', ['Get-ChildItem ` ', 'Get-Location']],
+    ['Set-Location C:\\\nGet-Location', ['Set-Location C:\\', 'Get-Location']],
+  ])('splits PowerShell commands in %j', (text, expected) => {
+    expect(splitCommands(text, 'powershell').map(({ from, to }) => text.slice(from, to))).toEqual(expected);
   });
 });
 

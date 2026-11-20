@@ -1,5 +1,5 @@
 import type { CodeBlock } from './codeblock';
-import { splitCommands } from './commands';
+import { commandPromptSymbol, splitCommands } from './commands';
 import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, setOutputToggle } from './command-render';
 import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
@@ -30,6 +30,7 @@ export class ReadingCommandView {
     view.classList.toggle('motto-command-output-open', open && foldState === 'expanded');
     view.hidden = foldState === 'folded' || pre.hidden;
     pre.before(view);
+    const prompt = commandPromptSymbol(block.language, block.terminal?.user);
     const render = () => {
       const text = (code.textContent ?? '').replaceAll('\r\n', '\n');
       if (text !== block.text && text !== `${block.text}\n`) {
@@ -41,7 +42,7 @@ export class ReadingCommandView {
       }
       view.hidden = foldState === 'folded' || pre.hidden;
       pre.classList.add('motto-command-native');
-      const commands = splitCommands(block.text);
+      const commands = splitCommands(block.text, block.language);
       const cutoff = preview === undefined ? block.text.length
         : block.text.split('\n').slice(0, preview).join('\n').length;
       destroyHippoSpeech(view);
@@ -51,7 +52,7 @@ export class ReadingCommandView {
         const row = view.createDiv();
         row.className = 'motto-command-row';
         row.classList.toggle('motto-command-wrap', wrappedCommands.has(command.from));
-        row.append(commandPrompt(document, block.terminal?.user === 'root' ? '#' : '$', () => {
+        row.append(commandPrompt(document, prompt, () => {
           if (row.classList.toggle('motto-command-wrap')) wrappedCommands.add(command.from);
           else wrappedCommands.delete(command.from);
         }));

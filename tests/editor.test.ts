@@ -85,21 +85,27 @@ describe('live preview headers', () => {
     expect(view.state.doc.toString()).toBe(doc.replace('```json', '```xml'));
   });
 
-  it('toggles wrapping for a command and its continuation without editing or toggling output', () => {
-    const doc = 'Intro\n\n```sh user:root\npwd\nprintf \\\n  "hello"\n```\n```ansi\n/srv\n```';
+  it.each([
+    ['sh', 'pwd', 'printf \\\n  "hello"', '#'],
+    ['powershell', 'Get-Location', 'Get-ChildItem `\n  -Force', '>'],
+  ])('toggles wrapping for a %s command and its continuation without editing or toggling output', (language, first, command, symbol) => {
+    const doc = `Intro\n\n\`\`\`${language} user:root\n${first}\n${command}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``;
     const { view, headers } = fixture(true, doc);
     const prompts = () => [...view.dom.querySelectorAll<HTMLButtonElement>('.motto-command-prompt')];
     const lines = () => [...view.dom.querySelectorAll('.motto-command-line')];
     const wrapped = () => lines().map((line) => line.classList.contains('motto-command-wrap'));
     const output = view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
     const start = view.state.selection;
-    expect(prompts()[1]?.textContent).toBe('#');
+    expect(prompts().map((prompt) => prompt.textContent)).toEqual([symbol, symbol]);
     expect(prompts()[1]?.getAttribute('aria-label')).toBe('Toggle command wrapping');
     expect(prompts()[1]?.hasAttribute('title')).toBe(false);
     expect(wrapped()).toEqual([false, false, false]);
     prompts()[1]!.click();
     expect(wrapped()).toEqual([false, true, true]);
     expect(output.getAttribute('aria-expanded')).toBe('false');
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    lines()[1]!.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(command);
     expect(view.state.selection.eq(start)).toBe(true);
     expect(view.state.doc.toString()).toBe(doc);
     view.dispatch({ changes: { from: 0, insert: 'Preface\n' } });

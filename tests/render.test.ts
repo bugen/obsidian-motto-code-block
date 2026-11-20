@@ -477,6 +477,15 @@ describe('header display', () => {
     expect(ordinary.querySelector('.motto-terminal-icon, .motto-command-context')).toBeNull();
   });
 
+  it('keeps the PowerShell language icon in command headers', () => {
+    const block = parseCodeBlocks('```PowerShell cmd user:root\nGet-Location\n```').blocks[0]!;
+    const header = createHeader(document, block, DEFAULT_SETTINGS)!;
+    expect(header.classList.contains('motto-command-header')).toBe(true);
+    expect(header.querySelector('.motto-command-context')?.textContent).toBe('root');
+    expect(header.querySelector('.motto-terminal-icon')).toBeNull();
+    expect(header.querySelector('.motto-language-icon')?.getAttribute('src')).toBe(languages.powershell.icon);
+  });
+
   it.each([
     ['default', 'js', false], ['default', '', false],
     ['default', 'js arbitrary custom:value', false],

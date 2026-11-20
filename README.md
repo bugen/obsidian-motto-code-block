@@ -34,7 +34,8 @@ Code blocks adapt to your active Obsidian theme's colors and styling, in both li
 
 Command Block presents shell commands and their output in a terminal-style layout. Copy individual commands without prompts, show or hide output with a click, and display ANSI-colored output. Commands are displayed, not executed.
 
-Click a command's `$` or `#` prompt to toggle line wrapping for that command, including any continuation lines. With wrapping off, scroll horizontally to read long lines.
+Click a command's prompt to toggle line wrapping for that command, including any continuation lines. With wrapping off, scroll horizontally to read long lines.
+`powershell` blocks keep the PowerShell icon, show `>` instead of `$` or `#`, and use a trailing backtick to continue a command on the next line.
 
 ![Command Block with shell commands and output](./screenshots/command_block_lvs.png)
 
@@ -48,7 +49,7 @@ Add options after the language name on the opening code fence. Quote values that
 | `fold` / `expand` | Start folded / fully expanded. |
 | `expand:5` | Show a partial preview of the first five lines. |
 | `header-style:info` | Color the header using an Obsidian callout type. |
-| `cmd` | Render a `sh`, `bash`, `zsh`, `csh`, or `fish` block as a Command Block. |
+| `cmd` | Render a `sh`, `bash`, `zsh`, `csh`, `fish`, or `powershell` block as a Command Block. |
 | `prompt:"user@host:~/project"` | Show the user, host, and working directory in a Command Block header. |
 | `user:`, `host:`, `cwd:` | Set the prompt fields individually. |
 | `exclude` | Disable this plugin's enhancements for the block. |

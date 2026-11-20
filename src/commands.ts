@@ -1,7 +1,12 @@
-export const SHELL_LANGUAGES = ['sh', 'bash', 'zsh', 'csh', 'fish'] as const;
+export const SHELL_LANGUAGES = ['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell'] as const;
 
 export function isShell(language: string): boolean {
   return SHELL_LANGUAGES.some((shell) => shell === language);
+}
+
+export function commandPromptSymbol(language: string, user?: string): string {
+  if (language === 'powershell') return '>';
+  return user === 'root' ? '#' : '$';
 }
 
 export interface CommandRange {
@@ -11,8 +16,9 @@ export interface CommandRange {
   endLine: number;
 }
 
-export function splitCommands(text: string): CommandRange[] {
+export function splitCommands(text: string, language: string): CommandRange[] {
   const commands: CommandRange[] = [];
+  const continuation = language === 'powershell' ? /`+$/ : /\\+$/;
   let offset = 0;
   let from = 0;
   let startLine = 0;
@@ -23,7 +29,7 @@ export function splitCommands(text: string): CommandRange[] {
       startLine = lineNumber;
     }
     const to = offset + line.length;
-    continued = (line.match(/\\+$/)?.[0].length ?? 0) % 2 === 1;
+    continued = (line.match(continuation)?.[0].length ?? 0) % 2 === 1;
     if ((!continued || to === text.length) && text.slice(from, to).trim()) {
       commands.push({ from, to, startLine, endLine: lineNumber });
     }
