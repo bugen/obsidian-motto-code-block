@@ -147,9 +147,15 @@ describe('settings tab', () => {
     change('Editing theme', 'light');
     await vi.waitFor(() => { expect(row('Header background').querySelector('select')?.value).toBe('code'); });
     change('Command blocks', false);
-    await vi.waitFor(() => { expect(row('Output languages').querySelector('textarea')?.disabled).toBe(true); });
+    await vi.waitFor(() => {
+      expect(row('Command languages').querySelector('textarea')?.disabled).toBe(true);
+      expect(row('Output languages').querySelector('textarea')?.disabled).toBe(true);
+    });
     reset('Command blocks');
-    await vi.waitFor(() => { expect(row('Output languages').querySelector('textarea')?.disabled).toBe(false); });
+    await vi.waitFor(() => {
+      expect(row('Command languages').querySelector('textarea')?.disabled).toBe(false);
+      expect(row('Output languages').querySelector('textarea')?.disabled).toBe(false);
+    });
     tab.hide();
     tab.update();
     expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
@@ -181,7 +187,7 @@ describe('settings tab', () => {
     for (const name of ['Header display', 'Icon size', 'Header background', 'Bold title', 'Line numbers']) {
       expect(sections[1]?.contains(row(name))).toBe(true);
     }
-    for (const name of ['Command blocks', 'Output languages', 'Output toggle icon', 'Tap my hip-po!']) {
+    for (const name of ['Command blocks', 'Command languages', 'Output languages', 'Output toggle icon', 'Tap my hip-po!']) {
       expect(sections[2]?.contains(row(name))).toBe(true);
     }
     expect(row('Show icon').nextElementSibling?.contains(row('Icon size'))).toBe(true);
@@ -417,6 +423,28 @@ describe('settings tab', () => {
     change('Editing theme', 'dark');
     await vi.waitFor(() => {
       expect(row('Editing theme').querySelector('[aria-pressed="true"]')?.textContent).toBe('Dark');
+    });
+  });
+
+  it('saves and resets command languages without changing general eligibility', async () => {
+    const { plugin, saved, row, change, reset, modified } = fixture();
+    const name = 'Command languages';
+    const defaults = DEFAULT_SETTINGS.commandLanguages.join('\n');
+    expect(row(name).querySelector('textarea')?.value).toBe(defaults);
+    change(name, `${defaults}\nDASH, dash`);
+    await vi.waitFor(() => {
+      expect(saved[saved.length - 1]).toEqual({
+        ...DEFAULT_SETTINGS, commandLanguages: [...DEFAULT_SETTINGS.commandLanguages, 'dash'],
+      });
+      expect(modified(name)).toBe(true);
+    });
+    change(name, '');
+    await vi.waitFor(() => { expect(plugin.settings.commandLanguages).toEqual([]); });
+    reset(name);
+    await vi.waitFor(() => {
+      expect(saved[saved.length - 1]).toEqual(DEFAULT_SETTINGS);
+      expect(row(name).querySelector('textarea')?.value).toBe(defaults);
+      expect(modified(name)).toBe(false);
     });
   });
 

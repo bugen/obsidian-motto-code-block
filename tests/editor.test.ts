@@ -37,6 +37,36 @@ afterEach(() => {
 });
 
 describe('live preview headers', () => {
+  it('updates configured command languages without requiring them in the general include list', () => {
+    const doc = 'Intro\n\n```dash\npwd\n```\n```ansi expand\n/work\n```';
+    const { view, updateSettings } = fixture(true, doc);
+    const prompt = () => view.dom.querySelector('.motto-command-prompt');
+    const output = () => view.dom.querySelector('.motto-command-output');
+    expect(prompt()).toBeNull();
+    const settings = parseSettings({ commandLanguages: ['dash'], languageIncludeList: ['ansi'] });
+    updateSettings(settings);
+    expect(prompt()?.textContent).toBe('$');
+    expect(output()?.querySelector('code')?.textContent).toBe('/work');
+    updateSettings({ ...settings, languageExcludeList: ['dash'] });
+    expect(prompt()).toBeNull();
+    expect(output()).toBeNull();
+    updateSettings(settings);
+    expect(output()).not.toBeNull();
+    updateSettings({ ...settings, commandLanguages: [] });
+    expect(prompt()).toBeNull();
+    expect(output()).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it('only uses a configured ANSI fence as a command when it meets the activation conditions', () => {
+    const doc = 'Intro\n\n```ansi cmd\nrun\n```\n\n```ansi\noutput\n```';
+    const settings = parseSettings({ commandLanguages: ['ansi'] });
+    const { view } = fixture(true, doc, settings);
+    expect(view.dom.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    expect([...view.dom.querySelectorAll('.motto-ansi-standalone code')].map((code) => code.textContent))
+      .toEqual(['output']);
+  });
+
   it.each([
     ['text', 'line one\n\nline three\nline four'],
     ['json', '{\n  "ok": true,\n  "count": 2\n}'],
@@ -254,7 +284,7 @@ describe('live preview headers', () => {
   it.each(['js', 'ansi', 'bash', 'my-language', ''])(
     'leaves excluded %j source and selection behavior alone and refreshes eligibility', (language) => {
       const name = language || 'plaintext';
-      const doc = `Intro\n\n\`\`\`${language} title:Test expand:1${language === 'bash' ? ' user:root' : ''}\nfirst\nsecond\n\`\`\`\n\nAfter`;
+      const doc = `Intro\n\n\`\`\`${language} title:Test expand:1\nfirst\nsecond\n\`\`\`\n\nAfter`;
       const settings = parseSettings({ languageIncludeList: [] });
       const { view, updateSettings } = fixture(true, doc, settings);
       expect(view.dom.querySelector('[class*="motto-"]')).toBeNull();

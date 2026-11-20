@@ -1,8 +1,8 @@
 import { MarkdownRenderChild, type MarkdownPostProcessorContext } from 'obsidian';
-import { parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
+import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
 import { createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
-import { isLanguageEnabled, type FoldState, type MottoSettings } from './settings';
+import type { FoldState, MottoSettings } from './settings';
 import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
 import { ReadingCommandView, ReadingOutputView } from './command-reading';
 import { ansiPreview } from './command-render';
@@ -45,7 +45,7 @@ export class ReadingHeaders {
     const source = await this.readSource(context.sourcePath);
     if (this.disposed || source === undefined) return;
     const settings = this.getSettings();
-    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings), settings.outputLanguages);
+    const result = parseCodeBlocks(source, settings);
     reportDiagnostics(result.diagnostics, context.sourcePath);
     const used = new Set<number>();
     for (const mount of this.mounts.values()) {
@@ -102,7 +102,7 @@ export class ReadingHeaders {
     for (const mount of this.mounts.values()) {
       let blocks = parsed.get(mount.source);
       if (!blocks) {
-        blocks = new Map(parseCodeBlocks(mount.source, (language) => isLanguageEnabled(language, settings), settings.outputLanguages)
+        blocks = new Map(parseCodeBlocks(mount.source, settings)
           .blocks.map((block) => [block.from, block]));
         parsed.set(mount.source, blocks);
       }
@@ -134,7 +134,7 @@ export class ReadingHeaders {
     const settings = this.getSettings();
     mount.header?.remove();
     mount.header = null;
-    if (mount.block.exclude || !isLanguageEnabled(mount.block.language, settings)) {
+    if (!isCodeBlockEnabled(mount.block, settings)) {
       mount.expandFooter?.remove();
       mount.expandFooter = null;
       mount.layout?.destroy();

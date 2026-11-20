@@ -34,6 +34,8 @@ Code blocks adapt to your active Obsidian theme's colors and styling, in both li
 
 Command Block presents shell commands and their output in a terminal-style layout. Copy individual commands without prompts, show or hide output with a click, and display ANSI-colored output. Commands are displayed, not executed.
 
+The default **Command languages** are `sh`, `bash`, `zsh`, `csh`, `fish`, and `powershell`. To use another shell, add its fence name (such as `dash`) under **Command blocks → Command languages**, then use a fence like `dash cmd`. You do not need to add it to the general include list. The exclude list and `exclude` still take precedence.
+
 Click a command's prompt to toggle line wrapping for that command, including any continuation lines. With wrapping off, scroll horizontally to read long lines.
 `powershell` blocks keep the PowerShell icon, show `>` instead of `$` or `#`, and use a trailing backtick to continue a command on the next line.
 
@@ -49,7 +51,7 @@ Add options after the language name on the opening code fence. Quote values that
 | `fold` / `expand` | Start folded / fully expanded. |
 | `expand:5` | Show a partial preview of the first five lines. |
 | `header-style:info` | Color the header using an Obsidian callout type. |
-| `cmd` | Render a `sh`, `bash`, `zsh`, `csh`, `fish`, or `powershell` block as a Command Block. |
+| `cmd` | Render a fence listed in **Command languages** as a Command Block. |
 | `prompt:"user@host:~/project"` | Show the user, host, and working directory in a Command Block header. |
 | `user:`, `host:`, `cwd:` | Set the prompt fields individually. |
 | `exclude` | Disable this plugin's enhancements for the block. |
@@ -90,7 +92,7 @@ python manhattan_distance_contours.py
 
 Code blocks retain Obsidian's syntax highlighting and use your active theme's colors by default, rather than a separate plugin color scheme.
 
-Use **Language include list** and **Language exclude list** in settings to choose which languages are enhanced. Exclude languages handled by other plugins to help avoid rendering conflicts. Mermaid is excluded by default.
+Use **Language include list** to choose languages for ordinary code block enhancements and command output. **Language exclude list** also takes precedence over **Command languages**. Exclude languages handled by other plugins to avoid rendering conflicts. Mermaid is excluded by default.
 
 ## Acknowledgements
 

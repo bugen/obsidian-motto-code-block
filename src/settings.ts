@@ -39,6 +39,7 @@ export interface MottoSettings {
   languageExcludeList: string[];
   headerDisplay: HeaderDisplayMode;
   commandBlocks: boolean;
+  commandLanguages: string[];
   outputLanguages: string[];
   commandSpacing: CommandSpacing;
   tapMyHippo: boolean;
@@ -67,11 +68,12 @@ const DEFAULT_HEADER_STYLE: Readonly<HeaderStyleSettings> = {
 export const DEFAULT_SETTINGS: Readonly<MottoSettings> = {
   languageIncludeList: normalizeLanguageList([
     ...Object.entries(languages).flatMap(([id, definition]) => [id, ...definition.aliases]),
-    ...SHELL_LANGUAGES, 'ansi',
+    ...DEFAULT_COMMAND_LANGUAGES, 'ansi',
   ].join('\n')).sort(),
   languageExcludeList: ['mermaid'],
   headerDisplay: 'default',
   commandBlocks: true,
+  commandLanguages: [...DEFAULT_COMMAND_LANGUAGES],
   outputLanguages: ['ansi'],
   commandSpacing: 'middle',
   tapMyHippo: false,
@@ -191,6 +193,7 @@ export function parseSettings(data: unknown): MottoSettings {
     ...DEFAULT_SETTINGS,
     languageIncludeList: [...DEFAULT_SETTINGS.languageIncludeList],
     languageExcludeList: [...DEFAULT_SETTINGS.languageExcludeList],
+    commandLanguages: [...DEFAULT_SETTINGS.commandLanguages],
     outputLanguages: [...DEFAULT_SETTINGS.outputLanguages],
     headerStyles: {
       light: { ...DEFAULT_SETTINGS.headerStyles.light },
@@ -209,6 +212,7 @@ export function parseSettings(data: unknown): MottoSettings {
   for (const [key, legacyKey] of [
     ['languageIncludeList', 'languageWhitelist'],
     ['languageExcludeList', 'languageBlacklist'],
+    ['commandLanguages', 'commandLanguages'],
     ['outputLanguages', 'outputLanguages'],
   ] as const) {
     const savedKey: string = key in data ? key : legacyKey;
@@ -272,6 +276,6 @@ export function parseSettings(data: unknown): MottoSettings {
   }
   return settings;
 }
-import { SHELL_LANGUAGES } from './commands';
+import { DEFAULT_COMMAND_LANGUAGES } from './commands';
 import { languages } from './languages';
 

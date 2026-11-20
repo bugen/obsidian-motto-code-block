@@ -1,9 +1,9 @@
 import { MapMode, Prec, StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
 import { editorLivePreviewField } from 'obsidian';
-import { parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
+import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
 import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState } from './render';
-import { isLanguageEnabled, shouldShowHeader, type FoldState, type MottoSettings } from './settings';
+import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
 import { commandPromptSymbol, splitCommands, type CommandRange } from './commands';
@@ -278,7 +278,7 @@ function editingAnsiBlocks(
 ): Set<number> {
   const editing = new Set<number>();
   for (const block of blocks) {
-    if (block.language !== 'ansi' || (settings.commandBlocks && block.commandFrom !== undefined)) continue;
+    if (block.language !== 'ansi' || (settings.commandBlocks && (block.terminal || block.commandFrom !== undefined))) continue;
     // Keep the opening boundary editable once source editing has begun; headers use it to return to preview.
     const from = previous.has(block.from) ? block.from : block.from + 1;
     if (insideOutput(block, state, from)) editing.add(block.from);
@@ -329,6 +329,7 @@ function decorate(
   for (const block of blocks) {
     if (settings.commandBlocks && block.commandFrom !== undefined) continue;
     const foldState = folds.get(block.from) ?? 'expanded';
+    const terminal = settings.commandBlocks ? block.terminal : undefined;
     const preview = foldState === 'partial' ? previewLineCount(block, settings) : undefined;
     const hasHeader = shouldShowHeader(settings.headerDisplay, block.hasParameters);
     if (hasHeader) {
@@ -340,7 +341,7 @@ function decorate(
         : Decoration.line({ class: 'motto-code-block-start' }).range(block.from));
     }
     if (foldState === 'folded') continue;
-    if (block.language === 'ansi' && !ansiEditing.has(block.from)) {
+    if (block.language === 'ansi' && !terminal && !ansiEditing.has(block.from)) {
       decorations.push(Decoration.replace({
         widget: new AnsiWidget(block, settings, preview), block: true,
       }).range(block.from, block.to));
@@ -359,11 +360,11 @@ function decorate(
         block: true, widget: new ExpandWidget(block.from, block.lineCount - preview),
       }).range(from, block.to));
     }
-    if (settings.commandBlocks && block.terminal) {
+    if (terminal) {
       decorations.push(Decoration.line({ class: 'motto-command-start' }).range(block.from));
       const commands = splitCommands(block.text, block.language);
-      const prompt = commandPromptSymbol(block.language, block.terminal.user);
-      const output = block.terminal.output;
+      const prompt = commandPromptSymbol(block.language, terminal.user);
+      const output = terminal.output;
       const outputState = outputs.get(block.from);
       const open = outputState?.open === true;
       const count = preview ?? block.lineCount;
@@ -443,9 +444,9 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
   function readBlocks(livePreview: boolean, source: string): CodeBlock[] {
     if (!livePreview) return [];
     const settings = getSettings();
-    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings), settings.outputLanguages);
+    const result = parseCodeBlocks(source, settings);
     reportDiagnostics(result.diagnostics, 'editor');
-    return result.blocks.filter((block) => !block.exclude && isLanguageEnabled(block.language, settings));
+    return result.blocks.filter((block) => isCodeBlockEnabled(block, settings));
   }
   const field = StateField.define<HeaderState>({
     create(state) {

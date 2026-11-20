@@ -4,6 +4,19 @@ import { DEFAULT_SETTINGS, isLanguageEnabled, OUTPUT_TOGGLE_ICONS, parseSettings
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('saved settings', () => {
+  it('normalizes and preserves command languages independently of other lists', () => {
+    const defaults = parseSettings({});
+    expect(defaults.commandLanguages).toEqual(['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell']);
+    const settings = parseSettings({ commandLanguages: [' SH, DASH ', 'dash\nPwSh'] });
+    expect(settings.commandLanguages).toEqual(['sh', 'dash', 'pwsh']);
+    expect(settings.languageIncludeList).toEqual(defaults.languageIncludeList);
+    expect(parseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    expect(parseSettings({ commandLanguages: [] }).commandLanguages).toEqual([]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSettings({ commandLanguages: ['dash', 1] }).commandLanguages).toEqual(defaults.commandLanguages);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"commandLanguages"'));
+  });
+
   it('defaults output languages to ANSI, normalizes saved lists and preserves an empty list', () => {
     const defaults = parseSettings({});
     expect(defaults.outputLanguages).toEqual(['ansi']);

@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { parseCodeBlocks, parseInfo } from '../src/codeblock';
 import { splitCommands } from '../src/commands';
-import { isLanguageEnabled, parseSettings } from '../src/settings';
+import { DEFAULT_SETTINGS, parseSettings } from '../src/settings';
 
 describe('command blocks', () => {
   it.each(['text', 'json', 'xml'])('pairs %s only when configured and both adjacent blocks are eligible', (language) => {
     const source = `\`\`\`sh\ncat result\n\`\`\`\n\`\`\`${language}\nresult\n\`\`\``;
     expect(parseCodeBlocks(source).blocks[0]?.terminal).toBeUndefined();
     const settings = parseSettings({ outputLanguages: ['ansi', language.toUpperCase()] });
-    const parse = (text: string, configuration = settings) =>
-      parseCodeBlocks(text, (name) => isLanguageEnabled(name, configuration), configuration.outputLanguages);
+    const parse = (text: string, configuration = settings) => parseCodeBlocks(text, configuration);
     const { blocks } = parse(source);
     expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
     expect(blocks[1]?.commandFrom).toBe(blocks[0]?.from);
@@ -28,15 +27,15 @@ describe('command blocks', () => {
 
   it('matches output language aliases independently and uses plaintext for unlabelled output', () => {
     const source = '```sh\npwd\n```\n```txt\n/work\n```';
-    expect(parseCodeBlocks(source, () => true, ['text']).blocks[0]?.terminal).toBeUndefined();
-    expect(parseCodeBlocks(source, () => true, ['txt']).blocks[0]?.terminal?.output).toBeDefined();
+    expect(parseCodeBlocks(source, { ...DEFAULT_SETTINGS, outputLanguages: ['text'] }).blocks[0]?.terminal).toBeUndefined();
+    expect(parseCodeBlocks(source, { ...DEFAULT_SETTINGS, outputLanguages: ['txt'] }).blocks[0]?.terminal?.output).toBeDefined();
     const unlabelled = source.replace('```txt', '```');
-    expect(parseCodeBlocks(unlabelled, () => true, ['plaintext']).blocks[0]?.terminal?.output).toBeDefined();
+    expect(parseCodeBlocks(unlabelled, { ...DEFAULT_SETTINGS, outputLanguages: ['plaintext'] }).blocks[0]?.terminal?.output).toBeDefined();
   });
 
   it('does not let a shell claimed as output also consume a subsequent output block', () => {
     const source = '```sh\nfirst\n```\n```bash\nsecond\n```\n```json\n{}\n```';
-    const { blocks } = parseCodeBlocks(source, () => true, ['bash', 'json']);
+    const { blocks } = parseCodeBlocks(source, { ...DEFAULT_SETTINGS, outputLanguages: ['bash', 'json'] });
     expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
     expect(blocks[1]?.terminal?.output).toBeUndefined();
     expect(blocks[2]?.commandFrom).toBeUndefined();
@@ -54,6 +53,43 @@ describe('command blocks', () => {
   it.each(['js', 'python', 'ansi', 'shell', 'cmd', 'command'])('does not activate commands for unsupported %s', (language) => {
     for (const flag of ['cmd', 'command']) {
       expect(parseCodeBlocks(`\`\`\`${language} ${flag}\nrun()\n\`\`\``).blocks[0]?.terminal).toBeUndefined();
+    }
+  });
+
+  it('activates configured fence names only under the existing command conditions', () => {
+    const settings = parseSettings({ commandLanguages: [' DASH '], languageIncludeList: [] });
+    for (const [info, terminal] of [
+      ['DASH cmd', {}], ['dash command', {}], ['dash user:root', { user: 'root' }],
+      ['dash', undefined], ['dash title:Example', undefined], ['dash-alias cmd', undefined],
+      ['dash cmd exclude', undefined], ['bash cmd', undefined],
+    ] as const) {
+      expect(parseCodeBlocks(`\`\`\`${info}\npwd\n\`\`\``, settings).blocks[0]?.terminal).toEqual(terminal);
+    }
+    const command = '```dash cmd\npwd\n```';
+    for (const configuration of [
+      DEFAULT_SETTINGS,
+      { ...settings, commandBlocks: false },
+      { ...settings, commandLanguages: [] },
+      { ...settings, languageExcludeList: ['dash'] },
+    ]) expect(parseCodeBlocks(command, configuration).blocks[0]?.terminal).toBeUndefined();
+  });
+
+  it('pairs a configured command without requiring it in the general include list', () => {
+    const source = '```dash expand:0\npwd\n```\n```ansi\n/work\n```';
+    const settings = parseSettings({ commandLanguages: ['dash'], languageIncludeList: ['ansi'] });
+    const { blocks, diagnostics } = parseCodeBlocks(source, settings);
+    expect(blocks[0]?.terminal?.output).toBe(blocks[1]);
+    expect(blocks[1]?.commandFrom).toBe(blocks[0]?.from);
+    expect(diagnostics).toHaveLength(1);
+    for (const configuration of [
+      { ...settings, languageIncludeList: [] },
+      { ...settings, languageExcludeList: ['dash'] },
+      { ...settings, languageExcludeList: ['ansi'] },
+    ]) {
+      const { blocks, diagnostics } = parseCodeBlocks(source, configuration);
+      expect(blocks[0]?.terminal).toBeUndefined();
+      expect(blocks[1]?.commandFrom).toBeUndefined();
+      expect(diagnostics).toEqual([]);
     }
   });
 
@@ -101,19 +137,18 @@ describe('command blocks', () => {
   it.each(['sh', 'ansi'])('does not pair excluded %s fences or diagnose their parameters', (excluded) => {
     const settings = parseSettings({ languageExcludeList: [excluded] });
     const source = '```sh title:Command\npwd\n```\n```ansi expand:0\nout\n```';
-    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, settings));
+    const result = parseCodeBlocks(source, settings);
     expect(result.blocks).toHaveLength(2);
     expect(result.blocks[0]?.terminal).toBeUndefined();
     expect(result.blocks[1]?.commandFrom).toBeUndefined();
     expect(result.diagnostics).toHaveLength(excluded === 'ansi' ? 0 : 1);
-    const metadata = parseCodeBlocks(source.replace('title:Command', 'user:root'),
-      (language) => isLanguageEnabled(language, settings));
-    expect(metadata.blocks[0]?.terminal).toEqual({ user: 'root' });
+    const metadata = parseCodeBlocks(source.replace('title:Command', 'user:root'), settings);
+    expect(metadata.blocks[0]?.terminal).toEqual(excluded === 'sh' ? undefined : { user: 'root' });
   });
 
   it('does not pair across excluded fences while retaining them for native block matching', () => {
     const source = '```sh\npwd\n```\n```dataview\nTABLE\n```\n```ansi\nout\n```';
-    const result = parseCodeBlocks(source, (language) => isLanguageEnabled(language, parseSettings(null)));
+    const result = parseCodeBlocks(source);
     expect(result.blocks.map((block) => block.language)).toEqual(['sh', 'dataview', 'ansi']);
     expect(result.blocks[0]?.terminal).toBeUndefined();
     expect(result.blocks[2]?.commandFrom).toBeUndefined();

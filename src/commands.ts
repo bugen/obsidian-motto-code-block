@@ -1,8 +1,4 @@
-export const SHELL_LANGUAGES = ['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell'] as const;
-
-export function isShell(language: string): boolean {
-  return SHELL_LANGUAGES.some((shell) => shell === language);
-}
+export const DEFAULT_COMMAND_LANGUAGES = ['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell'] as const;
 
 export function commandPromptSymbol(language: string, user?: string): string {
   if (language === 'powershell') return '>';

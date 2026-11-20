@@ -1,5 +1,5 @@
 import { parser } from '@lezer/markdown';
-import { isShell } from './commands';
+import { DEFAULT_SETTINGS, isLanguageEnabled, type MottoSettings } from './settings';
 
 export interface TerminalContext {
   user?: string;
@@ -161,9 +161,16 @@ function lineAt(starts: number[], position: number): number {
   return low;
 }
 
+export function isCodeBlockEnabled(
+  block: CodeBlock, settings: Pick<MottoSettings, 'commandBlocks' | 'languageIncludeList' | 'languageExcludeList'>,
+): boolean {
+  return !block.exclude && (Boolean(settings.commandBlocks && block.terminal) || isLanguageEnabled(block.language, settings));
+}
+
 export function parseCodeBlocks(
-  source: string, isEnabled: (language: string) => boolean = () => true,
-  outputLanguages: readonly string[] = ['ansi'],
+  source: string,
+  settings: Pick<MottoSettings, 'commandBlocks' | 'commandLanguages' | 'outputLanguages' |
+    'languageIncludeList' | 'languageExcludeList'> = DEFAULT_SETTINGS,
 ): { blocks: CodeBlock[]; diagnostics: Diagnostic[] } {
   const starts = [0];
   for (let index = 0; index < source.length; index++) {
@@ -171,8 +178,10 @@ export function parseCodeBlocks(
   }
   const base = frontmatterEnd(source);
   const blocks: CodeBlock[] = [];
-  const diagnostics: Diagnostic[] = [];
+  const pendingDiagnostics = new Map<number, string[]>();
   const adjacent = new Set<number>();
+  const isCommandLanguage = (language: string) => settings.commandBlocks &&
+    settings.commandLanguages.includes(language) && !settings.languageExcludeList.includes(language);
   parser.parse(source.slice(base)).iterate({
     enter(ref) {
       if (ref.name !== 'FencedCode') return;
@@ -181,10 +190,7 @@ export function parseCodeBlocks(
       const info = parseInfo(infoNode ? source.slice(base + infoNode.from, base + infoNode.to) : '');
       const startLine = lineAt(starts, base + node.from);
       const endLine = lineAt(starts, base + node.to);
-      // Keep every fence for native-DOM matching, but only diagnose and pair eligible blocks.
-      if (!info.exclude && isEnabled(info.language)) {
-        for (const message of info.diagnostics) diagnostics.push({ line: startLine, message });
-      }
+      if (info.diagnostics.length > 0) pendingDiagnostics.set(startLine, info.diagnostics);
       blocks.push({
         from: starts[startLine]!,
         to: base + node.to,
@@ -195,7 +201,7 @@ export function parseCodeBlocks(
         title: info.title,
         hasParameters: info.hasParameters,
         ...(info.exclude ? { exclude: true } : {}),
-        ...(!info.exclude && isShell(info.language) && info.context ? { terminal: { ...info.context } } : {}),
+        ...(!info.exclude && info.context && isCommandLanguage(info.language) ? { terminal: { ...info.context } } : {}),
         ...(info.headerStyle !== undefined ? { headerStyle: info.headerStyle } : {}),
         ...(info.fold !== undefined ? { fold: info.fold } : {}),
         ...(info.previewLines !== undefined ? { previewLines: info.previewLines } : {}),
@@ -218,13 +224,16 @@ export function parseCodeBlocks(
     const command = blocks[index]!;
     const output = blocks[index + 1]!;
     if (command.exclude || output.exclude || command.commandFrom !== undefined ||
-        !isShell(command.language) || !outputLanguages.includes(output.language || 'plaintext') ||
-        !adjacent.has(command.from) ||
-        !isEnabled(command.language) || !isEnabled(output.language)) continue;
+        !isCommandLanguage(command.language) || !settings.outputLanguages.includes(output.language || 'plaintext') ||
+        !adjacent.has(command.from) || !isLanguageEnabled(output.language, settings)) continue;
     command.terminal ??= {};
     command.terminal.output = output;
     output.commandFrom = command.from;
   }
+  const diagnostics = blocks.flatMap((block) =>
+    isCodeBlockEnabled(block, settings)
+      ? (pendingDiagnostics.get(block.startLine) ?? []).map((message) => ({ line: block.startLine, message }))
+      : []);
   return { blocks, diagnostics };
 }
 

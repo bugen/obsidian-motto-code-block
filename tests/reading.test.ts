@@ -52,6 +52,32 @@ afterEach(() => {
 });
 
 describe('reading mode headers', () => {
+  it('renders configured commands outside the general include list and restores native blocks when removed', async () => {
+    const source = '```dash\npwd\n```\n```ansi expand\n/work\n```';
+    const settings = parseSettings({ commandLanguages: ['dash'], languageIncludeList: ['ansi'] });
+    const { renderer, context, updateSettings } = fixture(source, settings);
+    const shell = block('pwd', 'dash');
+    const native = block('/work', 'ansi');
+    await renderer.process(shell.section, context);
+    await renderer.process(native.section, context);
+    const prompt = () => shell.section.querySelector('.motto-command-prompt');
+    const output = () => native.section.querySelector('.motto-command-output');
+    expect(prompt()?.textContent).toBe('$');
+    expect(output()?.querySelector('code')?.textContent).toBe('/work');
+    updateSettings({ ...settings, languageExcludeList: ['dash'] });
+    expect(prompt()).toBeNull();
+    expect(output()).toBeNull();
+    updateSettings(settings);
+    expect(prompt()).not.toBeNull();
+    expect(output()).not.toBeNull();
+    updateSettings({ ...settings, commandLanguages: [] });
+    expect(prompt()).toBeNull();
+    expect(output()).toBeNull();
+    expect(shell.pre.classList.contains('motto-command-native')).toBe(false);
+    expect(shell.code.firstChild).toBe(shell.token);
+    expect(shell.code.textContent).toBe('pwd\n');
+  });
+
   it.each([
     ['text', 'line one\n\nline three\nline four'],
     ['json', '{\n  "ok": true,\n  "count": 2\n}'],
@@ -289,7 +315,7 @@ describe('reading mode headers', () => {
       const name = language || 'plaintext';
       const settings = parseSettings({ languageIncludeList: [] });
       const { renderer, context, updateSettings } = fixture(
-        `\`\`\`${language} title:Test expand:1${language === 'bash' ? ' user:root' : ''}\nfirst\nsecond\n\`\`\``,
+        `\`\`\`${language} title:Test expand:1\nfirst\nsecond\n\`\`\``,
         settings,
       );
       const native = block('first\nsecond', language);

@@ -61,7 +61,7 @@ export class MottoSettingsTab extends PluginSettingTab {
       {
         type: 'group', heading: 'Command blocks', cls: 'motto-settings-section motto-settings-level-2',
         items: [
-          this.customSettings('Command blocks', ['Command spacing'], (parent) => this.addCommands(parent)),
+          this.customSettings('Command blocks', ['Command languages', 'Command spacing'], (parent) => this.addCommands(parent)),
           this.customSettings('Output', [
             'Output languages', 'Output toggle icon', 'Reverse output toggle icons',
             'Override output toggle color', 'Output toggle color', 'Tap my hip-po!',
@@ -139,9 +139,9 @@ export class MottoSettingsTab extends PluginSettingTab {
   private addLanguages(parent: HTMLElement): void {
     const languages = this.section(parent, 'Language eligibility', 3);
     this.addLanguageList(languages, 'languageIncludeList', 'Language include list',
-      'Enhance only these fence names. Separate with commas, spaces or new lines; case-insensitive, exact names only. Aliases are separate entries. Use plaintext for unlabelled blocks. Empty disables all enhancements.');
+      'Fence languages eligible for ordinary code block enhancements and output. Command languages are configured separately. Separate with commas, spaces or new lines; case-insensitive, exact names only. Aliases are separate entries. Use plaintext for unlabelled blocks.');
     this.addLanguageList(languages, 'languageExcludeList', 'Language exclude list',
-      'Never enhance these fence names, even when present in the include list. Same format as the include list. Mermaid is excluded by default to preserve native rendering.');
+      'Never enhance these fence names, even when present in the include or command languages list. Same format as the include list. Mermaid is excluded by default to preserve native rendering.');
 
   }
 
@@ -181,7 +181,10 @@ export class MottoSettingsTab extends PluginSettingTab {
   private addCommands(commands: HTMLElement): void {
     const noCommands = () => !this.motto.settings.commandBlocks;
     this.addToggle(commands, 'commandBlocks', 'Command blocks',
-      'Enhance supported shell blocks marked cmd/command, containing execution metadata, or immediately followed by a configured output block. Standalone ANSI rendering is independent.');
+      'Enhance configured languages when marked cmd/command, containing execution metadata, or immediately followed by a configured output block. Standalone ANSI rendering is independent.');
+    this.addLanguageList(commands, 'commandLanguages', 'Command languages',
+      'Add fence languages such as dash without changing the general include list. The exclude list and exclude flag still apply. Separate with commas, spaces or new lines; case-insensitive, exact names only. Empty disables command blocks.',
+      noCommands);
     this.addChoice(commands, 'commandSpacing', 'Command spacing',
       'Vertical spacing between commands in the same block. Small keeps the original spacing; Middle is the default. Continued lines are unchanged.',
       COMMAND_SPACING_MODES, { small: 'Small', middle: 'Middle', large: 'Large' }, noCommands);
@@ -191,7 +194,7 @@ export class MottoSettingsTab extends PluginSettingTab {
     const noCommands = () => !this.motto.settings.commandBlocks;
     const output = this.section(commands, 'Output', 3);
     this.addLanguageList(output, 'outputLanguages', 'Output languages',
-      'Fence languages treated as command output when immediately after a supported shell block. Default: ansi. Add text, json or xml as needed. Separate with commas, spaces or new lines; case-insensitive, exact names only. Use plaintext for unlabelled blocks. Language eligibility and exclude still apply. Empty disables output pairing.',
+      'Fence languages treated as command output when immediately after a configured command block. Default: ansi. Add text, json or xml as needed. Separate with commas, spaces or new lines; case-insensitive, exact names only. Use plaintext for unlabelled blocks. Language eligibility and exclude still apply. Empty disables output pairing.',
       noCommands);
     this.addThemeGroup(output, (parent, mode, refresh) => this.addOutputToggleAppearance(parent, mode, refresh));
     this.addToggle(output, 'tapMyHippo', 'Tap my hip-po!',
@@ -330,14 +333,14 @@ export class MottoSettingsTab extends PluginSettingTab {
   }
 
   private addLanguageList(
-    parent: HTMLElement, key: 'languageIncludeList' | 'languageExcludeList' | 'outputLanguages',
+    parent: HTMLElement, key: 'languageIncludeList' | 'languageExcludeList' | 'commandLanguages' | 'outputLanguages',
     name: string, description: string, disabled: () => boolean = () => false,
   ): void {
     const setting = this.createSetting(parent, name, disabled).setDesc(description);
     const defaults = new Set(DEFAULT_SETTINGS[key]);
     setting.controlEl.classList.add('motto-language-list-control');
     setting.addTextArea((text) => {
-      text.inputEl.rows = key === 'languageIncludeList' ? 6 : 3;
+      text.inputEl.rows = key === 'languageIncludeList' || key === 'commandLanguages' ? 6 : 3;
       text.inputEl.cols = 36;
       text.inputEl.setAttribute('aria-label', name);
       text.setValue(this.motto.settings[key].join('\n'));
