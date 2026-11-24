@@ -177,7 +177,7 @@ export function createHeader(
     header.addEventListener('click', (event) => {
       if (event.button !== 0) return;
       event.stopPropagation();
-      toggle.focus();
+      toggle.focus({ preventScroll: true });
       folding.toggle(header);
     });
     header.addEventListener('keydown', (event) => {

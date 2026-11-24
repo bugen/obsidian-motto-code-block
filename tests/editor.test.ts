@@ -45,6 +45,24 @@ afterEach(() => {
 });
 
 describe('live preview headers', () => {
+  it('still folds blocks and toggles output on older CodeMirror hosts without scrollSnapshot', () => {
+    const doc = 'Intro\n\n```js fold\nrun()\n```\n\n```sh\npwd\n```\n```plaintext\n/work\n```';
+    const { view } = fixture(true, doc);
+    Object.defineProperty(view, 'scrollSnapshot', { value: undefined });
+    const header = view.dom.querySelector<HTMLElement>('.motto-header')!;
+    const toggle = () => view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+
+    header.click();
+    expect(header.dataset.foldState).toBe('expanded');
+    toggle();
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/work');
+    toggle();
+    expect(view.dom.querySelector('.motto-command-output')).toBeNull();
+    header.click();
+    expect(header.dataset.foldState).toBe('folded');
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
   it('changes headed bodies and paired outputs independently in the active Live Preview editor', () => {
     const doc = [
       'Intro', '```js fold\nfolded()\n```', '```js title:Default\none()\ntwo()\n```',

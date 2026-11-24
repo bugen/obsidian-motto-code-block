@@ -28,6 +28,12 @@ const changeOutput = StateEffect.define<{ from: number; action: 'toggle' | 'expa
 const changeCommandWrap = StateEffect.define<{ from: number; wrap: boolean }>();
 const changeNoteFolds = StateEffect.define<NoteFoldAction>();
 
+function dispatchFoldClick(view: EditorView, from: number, effect: StateEffect<unknown>): void {
+  // Keep the viewport from following the document bottom when a block changes height.
+  const effects = typeof view.scrollSnapshot === 'function' ? [effect, view.scrollSnapshot()] : [effect];
+  view.dispatch({ effects, selection: { anchor: from } });
+}
+
 class HeaderWidget extends WidgetType {
   readonly block: CodeBlock;
   readonly settings: MottoSettings;
@@ -70,7 +76,7 @@ class HeaderWidget extends WidgetType {
       state: this.foldState,
       toggle: (header) => {
         const from = view.posAtDOM(header);
-        view.dispatch({ effects: toggleFold.of(from), selection: { anchor: from } });
+        dispatchFoldClick(view, from, toggleFold.of(from));
       },
     });
     if (!header) throw new Error('[Motto Code Block] Cannot mount a disabled header.');
@@ -109,7 +115,7 @@ class ExpandWidget extends WidgetType {
 
   override toDOM(view: EditorView): HTMLElement {
     return createExpandFooter(view.dom.ownerDocument, this.hiddenLines, () => {
-      view.dispatch({ effects: toggleFold.of(this.from), selection: { anchor: this.from } });
+      dispatchFoldClick(view, this.from, toggleFold.of(this.from));
       view.focus();
     });
   }
@@ -172,7 +178,7 @@ class CommandWidget extends WidgetType {
       }));
     }
     marker.append(commandTools(document, this.text, this.open, this.styles, this.output ? () => {
-      view.dispatch({ effects: changeOutput.of({ from: this.from, action: 'toggle' }), selection: { anchor: this.from } });
+      dispatchFoldClick(view, this.from, changeOutput.of({ from: this.from, action: 'toggle' }));
     } : undefined, this.tapMyHippo));
     return marker;
   }
@@ -204,10 +210,7 @@ class OutputWidget extends WidgetType {
 
   override toDOM(view: EditorView): HTMLElement {
     const preview = commandOutputPreview(view.dom.ownerDocument, this.block, this.preview, () => {
-      view.dispatch({
-        effects: changeOutput.of({ from: this.commandFrom, action: 'expand' }),
-        selection: { anchor: this.commandFrom },
-      });
+      dispatchFoldClick(view, this.commandFrom, changeOutput.of({ from: this.commandFrom, action: 'expand' }));
       view.focus();
     }, () => { editOutput(view, this.block); });
     OutputWidget.previews.set(preview.element, preview);

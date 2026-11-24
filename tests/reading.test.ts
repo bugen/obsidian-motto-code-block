@@ -53,6 +53,51 @@ afterEach(() => {
 });
 
 describe('reading mode headers', () => {
+  it.each(['header', 'output'])('keeps the reading scroll position when the %s changes the preview height', async (control) => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    const shell = control === 'output';
+    const { renderer, context } = fixture(shell
+      ? '```sh\npwd\n```\n```plaintext\n/work\n```'
+      : '```js fold\nrun()\n```');
+    const pane = document.body.createDiv();
+    pane.className = 'markdown-preview-view';
+    const primary = shell ? block('pwd', 'sh') : block('run()');
+    pane.append(primary.section);
+    await renderer.process(primary.section, context);
+    if (shell) {
+      const output = block('/work', 'plaintext');
+      pane.append(output.section);
+      await renderer.process(output.section, context);
+    }
+    const toggle = primary.section.querySelector<HTMLButtonElement>(
+      shell ? '.motto-output-toggle' : '.motto-header-toggle',
+    )!;
+    let max = 120;
+    vi.spyOn(pane, 'scrollTo').mockImplementation((options: ScrollToOptions | number, y?: number) => {
+      const top = typeof options === 'number' ? y : options.top;
+      pane.scrollTop = Math.min(max, top ?? pane.scrollTop);
+    });
+    pane.scrollTop = max;
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    requestAnimationFrame(() => { pane.scrollTop = max = 400; });
+    await vi.advanceTimersByTimeAsync(48);
+    expect(pane.scrollTop).toBe(120);
+
+    pane.scrollTop = 350;
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    requestAnimationFrame(() => { pane.scrollTop = max = 120; });
+    await vi.advanceTimersByTimeAsync(48);
+    expect(pane.scrollTop).toBe(120);
+
+    toggle.click();
+    pane.dispatchEvent(new WheelEvent('wheel'));
+    pane.scrollTop = 55;
+    await vi.advanceTimersByTimeAsync(48);
+    expect(pane.scrollTop).toBe(55);
+  });
+
   it('opens full paired outputs, preserves manual toggles, and restores fence and setting defaults', async () => {
     const { renderer, context } = fixture([
       '```js title:Default\none()\ntwo()\n```',

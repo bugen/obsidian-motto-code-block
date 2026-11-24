@@ -32,6 +32,7 @@ interface NoteFolds {
 export class ReadingHeaders {
   private readonly mounts = new Map<HTMLElement, Mount>();
   private readonly noteFolds = new WeakMap<HTMLElement, NoteFolds>();
+  private readonly pendingScroll = new WeakMap<HTMLElement, AbortController>();
   private readonly readSource: (path: string) => Promise<string | undefined>;
   private readonly getSettings: () => MottoSettings;
   private disposed = false;
@@ -203,6 +204,39 @@ export class ReadingHeaders {
     mount.block = block;
   }
 
+  private preserveScroll(pre: HTMLElement, update: () => void): void {
+    const preview = pre.closest<HTMLElement>('.markdown-preview-view');
+    const win = preview?.ownerDocument.defaultView;
+    if (!preview || !win) {
+      update();
+      return;
+    }
+
+    this.pendingScroll.get(preview)?.abort();
+    const top = preview.scrollTop;
+    const restore = () => {
+      if (preview.scrollTop !== top) preview.scrollTo({ top, behavior: 'instant' });
+    };
+    update();
+    restore();
+
+    const controller = new AbortController();
+    this.pendingScroll.set(preview, controller);
+    const { signal } = controller;
+    for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown']) {
+      preview.addEventListener(type, () => controller.abort(), { signal, capture: true, passive: true });
+    }
+    // Let the preview's layout and resize observers run before the final correction.
+    win.requestAnimationFrame(() => {
+      if (signal.aborted) return;
+      win.requestAnimationFrame(() => {
+        if (!signal.aborted && !this.disposed && preview.isConnected &&
+            preview.contains(pre) && this.mounts.has(pre)) restore();
+        controller.abort();
+      });
+    });
+  }
+
   private render(pre: HTMLElement, mount: Mount): void {
     const settings = this.getSettings();
     mount.header?.remove();
@@ -230,10 +264,10 @@ export class ReadingHeaders {
       pre.classList.remove('motto-code-block', 'motto-code-block-collapsed');
       const state = owner.outputState ??= initialOutputState(mount.block);
       const preview = outputPreviewLineCount(mount.block, state);
-      const expand = () => {
+      const expand = () => this.preserveScroll(pre, () => {
         state.fullyExpanded = true;
         this.renderOutputs();
-      };
+      });
       let output: ReadingOutputView;
       if (mount.layout instanceof ReadingOutputView && mount.layout.block.text === mount.block.text &&
           mount.layout.block.language === mount.block.language &&
@@ -253,13 +287,13 @@ export class ReadingHeaders {
     mount.foldState = resolveFoldState(mount.block, settings, mount.foldOverride);
     mount.header = createHeader(pre.ownerDocument, mount.block, settings, {
       state: mount.foldState,
-      toggle: () => {
+      toggle: () => this.preserveScroll(pre, () => {
         mount.foldState = nextFoldState(mount.block, this.getSettings(), mount.foldState);
         mount.foldOverride = mount.foldState;
         if (mount.header) setHeaderFoldState(mount.header, mount.foldState);
         this.renderBody(pre, mount);
         this.renderOutputs();
-      },
+      }),
     });
     if (!mount.header) {
       mount.foldState = 'expanded';
@@ -279,7 +313,7 @@ export class ReadingHeaders {
     mount.expandFooter = preview !== undefined
       ? createExpandFooter(pre.ownerDocument, mount.block.lineCount - preview, () => {
         mount.header?.click();
-        mount.header?.querySelector<HTMLButtonElement>('.motto-header-toggle')?.focus();
+        mount.header?.querySelector<HTMLButtonElement>('.motto-header-toggle')?.focus({ preventScroll: true });
       }) : null;
     if (mount.expandFooter) pre.after(mount.expandFooter);
     if (settings.commandBlocks && mount.block.terminal) {
@@ -287,11 +321,11 @@ export class ReadingHeaders {
       const outputState = mount.outputState;
       mount.layout = new ReadingCommandView(pre, mount.block, mount.wrappedCommands, settings.outputToggleStyles,
         mount.foldState, preview, outputState?.open === true,
-        output && outputState ? () => {
+        output && outputState ? () => this.preserveScroll(pre, () => {
           Object.assign(outputState, nextOutputState(output, outputState));
           if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputOpen(outputState.open);
           this.renderOutputs();
-        } : undefined, settings.tapMyHippo, settings.commandSpacing);
+        }) : undefined, settings.tapMyHippo, settings.commandSpacing);
       return;
     }
     if (mount.block.language === 'ansi') {
