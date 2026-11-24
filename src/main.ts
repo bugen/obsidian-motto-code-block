@@ -1,8 +1,17 @@
-import { Plugin, TFile } from 'obsidian';
+import { MarkdownView, Plugin, TFile } from 'obsidian';
 import { createEditorHeaders } from './editor';
+import type { NoteFoldAction } from './folding';
 import { ReadingHeaders } from './reading';
 import { parseSettings, type MottoSettings } from './settings';
 import { MottoSettingsTab } from './settings-tab';
+
+const noteFoldCommands: Record<NoteFoldAction, string> = {
+  'fold-blocks': 'Fold all code blocks',
+  'expand-blocks': 'Expand all code blocks',
+  'close-outputs': 'Close all command outputs',
+  'open-outputs': 'Open all command outputs',
+  'reset-folds': 'Reset block folding and output visibility',
+};
 
 export default class MottoCodeBlockPlugin extends Plugin {
   override settings: MottoSettings = parseSettings(null);
@@ -24,6 +33,20 @@ export default class MottoCodeBlockPlugin extends Plugin {
     this.registerMarkdownPostProcessor((element, context) => reading.process(element, context));
     this.editorHeaders = createEditorHeaders(() => this.settings);
     this.registerEditorExtension(this.editorHeaders.extension);
+    for (const [action, name] of Object.entries(noteFoldCommands) as [NoteFoldAction, string][]) {
+      this.addCommand({
+        id: action, name,
+        checkCallback: (checking) => {
+          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (!view?.file) return false;
+          if (view.getMode() === 'preview') {
+            if (!checking) reading.setNoteFolds(view.previewMode.containerEl, view.file.path, action);
+            return true;
+          }
+          return this.editorHeaders?.setNoteFolds(view.editor, action, checking) ?? false;
+        },
+      });
+    }
     this.addSettingTab(new MottoSettingsTab(this.app, this));
   }
 

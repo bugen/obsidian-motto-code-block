@@ -53,6 +53,113 @@ afterEach(() => {
 });
 
 describe('reading mode headers', () => {
+  it('opens full paired outputs, preserves manual toggles, and restores fence and setting defaults', async () => {
+    const { renderer, context } = fixture([
+      '```js title:Default\none()\ntwo()\n```',
+      '```sh fold\npwd\n```\n```ansi expand:1\nfirst\nsecond\n```',
+      '```sh\nuname\n```\n```plaintext\nLinux\n```',
+    ].join('\n\n'), { ...DEFAULT_SETTINGS, defaultFoldState: 'partial', partialFoldLines: 1 });
+    const plain = block('one()\ntwo()');
+    const shell = block('pwd', 'sh');
+    const paired = block('first\nsecond', 'ansi');
+    const headless = block('uname', 'sh');
+    const headlessOutput = block('Linux', 'plaintext');
+    const container = document.body.createDiv();
+    for (const { section } of [plain, shell, paired, headless, headlessOutput]) {
+      container.append(section);
+      await renderer.process(section, context);
+    }
+    const state = ({ section }: typeof plain) => section.querySelector<HTMLElement>('.motto-header')?.dataset.foldState;
+    const visible = ({ section }: typeof plain) =>
+      section.querySelector<HTMLElement>('.motto-command-output')?.hidden === false;
+    const pairedPreview = () => paired.section.querySelector('.motto-partial-codeblock');
+    const toggle = () => headless.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    renderer.setNoteFolds(container, context.sourcePath, 'open-outputs');
+    expect(state(plain)).toBe('partial');
+    expect(state(shell)).toBe('expanded');
+    expect(state(headless)).toBeUndefined();
+    expect(visible(paired)).toBe(true);
+    expect(pairedPreview()).toBeNull();
+    expect(visible(headlessOutput)).toBe(true);
+
+    renderer.setNoteFolds(container, context.sourcePath, 'fold-blocks');
+    expect(visible(paired)).toBe(false);
+    expect(visible(headlessOutput)).toBe(true);
+    renderer.setNoteFolds(container, context.sourcePath, 'expand-blocks');
+    expect(visible(paired)).toBe(true);
+    expect(pairedPreview()).toBeNull();
+    renderer.setNoteFolds(container, context.sourcePath, 'close-outputs');
+    expect(state(shell)).toBe('expanded');
+    expect(visible(paired)).toBe(false);
+    expect(visible(headlessOutput)).toBe(false);
+    toggle();
+    expect(visible(headlessOutput)).toBe(true);
+
+    renderer.setNoteFolds(container, context.sourcePath, 'reset-folds');
+    expect(state(plain)).toBe('partial');
+    expect(state(shell)).toBe('folded');
+    expect(visible(headlessOutput)).toBe(false);
+    renderer.setNoteFolds(container, context.sourcePath, 'expand-blocks');
+    expect(visible(paired)).toBe(true);
+    expect(pairedPreview()).not.toBeNull();
+  });
+
+  it('applies bulk actions to late sections only within the active note view', async () => {
+    const { renderer, context } = fixture('```js title:Note\none()\n```\n\n```js title:Late\nlater()\n```');
+    const active = document.body.createDiv();
+    const other = document.body.createDiv();
+    const embed = active.createDiv();
+    embed.className = 'markdown-embed';
+    const mount = async (container: HTMLElement, sectionContext: MarkdownPostProcessorContext, text = 'one()') => {
+      const { section } = block(text);
+      container.append(section);
+      await renderer.process(section, sectionContext);
+      return section.querySelector<HTMLElement>('.motto-header')!;
+    };
+    const otherHeader = await mount(other, { ...context, docId: 'other-pane' });
+    const embedHeader = await mount(embed, { ...context, docId: 'embed' });
+    renderer.setNoteFolds(active, context.sourcePath, 'fold-blocks');
+    const lateHeader = await mount(active, context);
+    expect(lateHeader.dataset.foldState).toBe('folded');
+    expect(otherHeader.dataset.foldState).toBe('expanded');
+    expect(embedHeader.dataset.foldState).toBe('expanded');
+    lateHeader.click();
+    expect(lateHeader.dataset.foldState).toBe('expanded');
+    renderer.setNoteFolds(active, context.sourcePath, 'reset-folds');
+    const afterReset = await mount(active, context, 'later()');
+    expect(afterReset.dataset.foldState).toBe('expanded');
+
+    renderer.setNoteFolds(active, context.sourcePath, 'fold-blocks');
+    expect(lateHeader.dataset.foldState).toBe('folded');
+    const navigated = await mount(active, { ...context, sourcePath: 'another.md', docId: 'another-note' });
+    expect(navigated.dataset.foldState).toBe('expanded');
+    const reopened = await mount(active, { ...context, docId: 'reopened-note' });
+    expect(reopened.dataset.foldState).toBe('expanded');
+  });
+
+  it('composes body and output actions for command blocks rendered after the commands', async () => {
+    const { renderer, context } = fixture(
+      '```js title:Note\none()\n```\n\n```sh fold\npwd\n```\n```ansi expand:1\nfirst\nsecond\n```',
+    );
+    const container = document.body.createDiv();
+    renderer.setNoteFolds(container, context.sourcePath, 'fold-blocks');
+    renderer.setNoteFolds(container, context.sourcePath, 'open-outputs');
+    renderer.setNoteFolds(container, context.sourcePath, 'close-outputs');
+    const plain = block('one()');
+    const shell = block('pwd', 'sh');
+    const output = block('first\nsecond', 'ansi');
+    for (const { section } of [plain, output, shell]) {
+      container.append(section);
+      await renderer.process(section, context);
+    }
+    expect(plain.section.querySelector<HTMLElement>('.motto-header')?.dataset.foldState).toBe('folded');
+    expect(shell.section.querySelector<HTMLElement>('.motto-header')?.dataset.foldState).toBe('expanded');
+    expect(output.section.querySelector('.motto-command-output, .motto-ansi-standalone')).toBeNull();
+    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(output.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(false);
+    expect(output.section.querySelector('.motto-partial-codeblock')).not.toBeNull();
+  });
+
   it('renders configured commands outside the general include list and restores native blocks when removed', async () => {
     const source = '```dash\npwd\n```\n```ansi expand\n/work\n```';
     const settings = parseSettings({ commandLanguages: ['dash'], languageIncludeList: ['ansi'] });

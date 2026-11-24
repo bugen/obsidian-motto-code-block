@@ -43,6 +43,14 @@ Click a command's prompt to toggle line wrapping for that command, including any
 
 Standalone `ansi` blocks show the ANSI logo when their header and icons are enabled. In any `ansi` preview, the copy icon copies plain text; **RAW** copies the full text with ANSI escape sequences.
 
+## Command palette
+
+Search for **Motto Code Block** in the command palette. These commands apply to the active note in Live Preview and Reading view without editing the note:
+
+- **Fold all code blocks** / **Expand all code blocks**: Change only blocks with headers, including Command Block bodies.
+- **Close all command outputs** / **Open all command outputs**: Change paired outputs even when their Command Blocks have no header. Opening also expands the parent Command Blocks and shows the full output.
+- **Reset block folding and output visibility**: Restore the defaults from the fence options and plugin settings.
+
 ## Extended syntax
 
 Add options after the language name on the opening code fence. Quote values that contain spaces.

@@ -6,6 +6,26 @@ export interface OutputState {
   fullyExpanded: boolean;
 }
 
+export type NoteFoldAction = 'fold-blocks' | 'expand-blocks' | 'close-outputs' | 'open-outputs' | 'reset-folds';
+
+export function hasFoldableHeader(block: CodeBlock, settings: MottoSettings): boolean {
+  return !(settings.commandBlocks && block.commandFrom !== undefined) &&
+    shouldShowHeader(settings.headerDisplay, block.hasParameters);
+}
+
+export function noteFoldOverride(block: CodeBlock, settings: MottoSettings, action: NoteFoldAction): FoldState | undefined {
+  if (!hasFoldableHeader(block, settings)) return;
+  if (action === 'fold-blocks') return 'folded';
+  if (action === 'expand-blocks' || (action === 'open-outputs' && settings.commandBlocks && block.terminal?.output)) {
+    return 'expanded';
+  }
+}
+
+export function noteOutputOverride(action: NoteFoldAction): OutputState | undefined {
+  if (action === 'open-outputs') return { open: true, fullyExpanded: true };
+  if (action === 'close-outputs') return { open: false, fullyExpanded: false };
+}
+
 export function initialOutputState(block: CodeBlock): OutputState {
   return { open: block.fold === false, fullyExpanded: false };
 }

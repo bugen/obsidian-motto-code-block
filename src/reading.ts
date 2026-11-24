@@ -3,7 +3,7 @@ import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock 
 import { createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import type { FoldState, MottoSettings } from './settings';
-import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
+import { initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { ReadingCommandView, ReadingOutputView } from './command-reading';
 import { ansiPreview } from './command-render';
 
@@ -12,6 +12,7 @@ interface Mount {
   header: HTMLElement | null;
   block: CodeBlock;
   docId: string;
+  sourcePath: string;
   source: string;
   foldState: FoldState;
   foldOverride: FoldState | undefined;
@@ -21,8 +22,16 @@ interface Mount {
   wrappedCommands: Set<number>;
 }
 
+interface NoteFolds {
+  path: string;
+  bodyAction?: 'fold-blocks' | 'expand-blocks';
+  outputAction?: 'close-outputs' | 'open-outputs';
+  expandOutputOwners?: boolean;
+}
+
 export class ReadingHeaders {
   private readonly mounts = new Map<HTMLElement, Mount>();
+  private readonly noteFolds = new WeakMap<HTMLElement, NoteFolds>();
   private readonly readSource: (path: string) => Promise<string | undefined>;
   private readonly getSettings: () => MottoSettings;
   private disposed = false;
@@ -37,6 +46,7 @@ export class ReadingHeaders {
 
   async process(element: HTMLElement, context: MarkdownPostProcessorContext): Promise<void> {
     if (this.disposed || element.closest('.markdown-source-view')) return;
+    this.foldsFor(element, context.sourcePath, true);
     const pres = [
       ...(element.matches('pre') ? [element] : []),
       ...element.querySelectorAll<HTMLElement>('pre'),
@@ -49,7 +59,9 @@ export class ReadingHeaders {
     reportDiagnostics(result.diagnostics, context.sourcePath);
     const used = new Set<number>();
     for (const mount of this.mounts.values()) {
-      if (mount.docId === context.docId && mount.source === source) used.add(mount.block.from);
+      if (mount.docId === context.docId && mount.sourcePath === context.sourcePath && mount.source === source) {
+        used.add(mount.block.from);
+      }
     }
     for (const pre of pres) {
       const existing = this.mounts.get(pre);
@@ -72,15 +84,23 @@ export class ReadingHeaders {
       if (existing) {
         this.updateBlock(existing, block);
         existing.source = source;
+        existing.sourcePath = context.sourcePath;
+        existing.docId = context.docId;
         this.render(pre, existing);
         continue;
       }
       const child = new MarkdownRenderChild(pre);
       const mount: Mount = {
-        child, header: null, block, docId: context.docId, source,
+        child, header: null, block, docId: context.docId, sourcePath: context.sourcePath, source,
         foldState: 'expanded', foldOverride: undefined, expandFooter: null, layout: null, outputState: undefined,
         wrappedCommands: new Set(),
       };
+      const folds = this.foldsFor(pre, context.sourcePath);
+      if (folds) {
+        const action = folds.expandOutputOwners && block.terminal?.output ? 'open-outputs' : folds.bodyAction;
+        if (action) mount.foldOverride = noteFoldOverride(block, settings, action);
+        if (block.terminal?.output && folds.outputAction) mount.outputState = noteOutputOverride(folds.outputAction);
+      }
       this.mounts.set(pre, mount);
       child.register(() => {
         mount.header?.remove();
@@ -94,6 +114,59 @@ export class ReadingHeaders {
       context.addChild(child);
     }
     this.renderOutputs();
+  }
+
+  setNoteFolds(container: HTMLElement, path: string, action: NoteFoldAction): void {
+    // Keep the bulk defaults for Reading View sections that are mounted later.
+    const previous = this.noteFolds.get(container);
+    const folds = previous?.path === path ? previous : { path };
+    if (action === 'reset-folds') this.noteFolds.delete(container);
+    else {
+      if (action === 'fold-blocks' || action === 'expand-blocks') {
+        folds.bodyAction = action;
+        folds.expandOutputOwners = false;
+      } else {
+        folds.outputAction = action;
+        if (action === 'open-outputs') folds.expandOutputOwners = true;
+      }
+      this.noteFolds.set(container, folds);
+    }
+
+    const settings = this.getSettings();
+    for (const [pre, mount] of this.mounts) {
+      if (mount.sourcePath !== path || !container.contains(pre) || pre.closest('.markdown-embed')) continue;
+      if (settings.commandBlocks && mount.block.terminal?.output) {
+        const state = action === 'reset-folds' ? initialOutputState(mount.block.terminal.output) : noteOutputOverride(action);
+        if (state) {
+          // Keep the state object captured by the existing output toggle.
+          if (mount.outputState) Object.assign(mount.outputState, state);
+          else mount.outputState = state;
+          if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputOpen(state.open);
+        }
+      }
+      if (!mount.header) continue;
+      const override = noteFoldOverride(mount.block, settings, action);
+      if (override === undefined && action !== 'reset-folds') continue;
+      mount.foldOverride = override;
+      const state = resolveFoldState(mount.block, settings, override);
+      if (mount.foldState !== state) {
+        mount.foldState = state;
+        setHeaderFoldState(mount.header, state);
+        this.renderBody(pre, mount);
+      }
+    }
+    this.renderOutputs(container, path);
+  }
+
+  private foldsFor(element: HTMLElement, path: string, clearIfChanged = false): NoteFolds | undefined {
+    if (element.closest('.markdown-embed')) return;
+    for (let parent: HTMLElement | null = element; parent; parent = parent.parentElement) {
+      const folds = this.noteFolds.get(parent);
+      if (!folds) continue;
+      if (folds.path === path) return folds;
+      if (clearIfChanged) this.noteFolds.delete(parent);
+      return;
+    }
   }
 
   refresh(): void {
@@ -147,7 +220,7 @@ export class ReadingHeaders {
     }
     const owner = settings.commandBlocks && mount.block.commandFrom !== undefined
       ? [...this.mounts.values()].find((candidate) =>
-        candidate.docId === mount.docId && candidate.source === mount.source &&
+        candidate.docId === mount.docId && candidate.sourcePath === mount.sourcePath && candidate.source === mount.source &&
         candidate.block.from === mount.block.commandFrom && candidate.block.terminal?.output?.from === mount.block.from)
       : undefined;
     if (owner) {
@@ -245,8 +318,9 @@ export class ReadingHeaders {
       : null;
   }
 
-  private renderOutputs(): void {
+  private renderOutputs(container?: HTMLElement, path?: string): void {
     for (const [pre, mount] of this.mounts) {
+      if (container && (mount.sourcePath !== path || !container.contains(pre) || pre.closest('.markdown-embed'))) continue;
       if (mount.block.commandFrom !== undefined) this.render(pre, mount);
     }
   }

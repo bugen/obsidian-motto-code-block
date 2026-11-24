@@ -1,11 +1,11 @@
 import { MapMode, Prec, StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
-import { editorLivePreviewField } from 'obsidian';
+import { editorInfoField, editorLivePreviewField, type Editor } from 'obsidian';
 import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
 import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
-import { initialOutputState, nextFoldState, nextOutputState, outputPreviewLineCount, previewLineCount, resolveFoldState, type OutputState } from './folding';
+import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { commandPromptSymbol, splitCommands, type CommandRange } from './commands';
 import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
@@ -26,6 +26,7 @@ interface HeaderState {
 const toggleFold = StateEffect.define<number>();
 const changeOutput = StateEffect.define<{ from: number; action: 'toggle' | 'expand' }>();
 const changeCommandWrap = StateEffect.define<{ from: number; wrap: boolean }>();
+const changeNoteFolds = StateEffect.define<NoteFoldAction>();
 
 class HeaderWidget extends WidgetType {
   readonly block: CodeBlock;
@@ -299,6 +300,17 @@ function outputStates(
   return outputs;
 }
 
+function hiddenBodyContainsSelection(block: CodeBlock, settings: MottoSettings, state: EditorState, fold: FoldState): boolean {
+  if (fold === 'expanded') return false;
+  const from = fold === 'partial'
+    ? state.doc.line(block.startLine + previewLineCount(block, settings) + 2).from : block.from + 1;
+  const to = commandEnd(block, settings) +
+    (fold === 'partial' || block.language === 'ansi' ||
+      (settings.commandBlocks && block.terminal?.output !== undefined) ? 1 : 0);
+  return state.selection.ranges.some(({ anchor, head }) =>
+    (anchor >= from && anchor < to) || (head >= from && head < to));
+}
+
 function foldedBlocks(
   blocks: CodeBlock[], settings: MottoSettings, state: EditorState, overrides: Map<number, FoldState>,
 ): Map<number, FoldState> {
@@ -307,13 +319,7 @@ function foldedBlocks(
     if (settings.commandBlocks && block.commandFrom !== undefined) continue;
     const foldState = resolveFoldState(block, settings, overrides.get(block.from));
     if (foldState === 'expanded') continue;
-    const from = foldState === 'partial'
-      ? state.doc.line(block.startLine + previewLineCount(block, settings) + 2).from : block.from + 1;
-    const to = commandEnd(block, settings) +
-      (foldState === 'partial' || block.language === 'ansi' ||
-        (settings.commandBlocks && block.terminal?.output !== undefined) ? 1 : 0);
-    if (state.selection.ranges.some(({ anchor, head }) =>
-      (anchor >= from && anchor < to) || (head >= from && head < to))) {
+    if (hiddenBodyContainsSelection(block, settings, state, foldState)) {
       overrides.set(block.from, 'expanded');
     } else folds.set(block.from, foldState);
   }
@@ -438,7 +444,10 @@ function decorate(
   };
 }
 
-export function createEditorHeaders(getSettings: () => MottoSettings): { extension: Extension; refresh: () => void } {
+export function createEditorHeaders(getSettings: () => MottoSettings): {
+  extension: Extension; refresh: () => void;
+  setNoteFolds: (editor: Editor, action: NoteFoldAction, checking: boolean) => boolean;
+} {
   const refresh = StateEffect.define<null>();
   const views = new Set<EditorView>();
   function readBlocks(livePreview: boolean, source: string): CodeBlock[] {
@@ -467,7 +476,8 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
       const livePreview = transaction.state.field(editorLivePreviewField, false) === true;
       const reparse = transaction.docChanged || livePreview !== previous.livePreview ||
         transaction.effects.some((effect) => effect.is(refresh));
-      if (!reparse && !transaction.effects.some((effect) =>
+      const bulkAction = transaction.effects.find((effect) => effect.is(changeNoteFolds))?.value;
+      if (!reparse && !bulkAction && !transaction.effects.some((effect) =>
         effect.is(toggleFold) || effect.is(changeOutput) || effect.is(changeCommandWrap)) &&
           !(transaction.selection && (previous.folds.size > 0 || previous.outputs.size > 0 ||
             previous.blocks.some((block) => block.language === 'ansi')))) return previous;
@@ -480,9 +490,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
           if (mapped !== null) commandWraps.set(transaction.state.doc.lineAt(mapped).from, wrap);
         }
       }
-      const visibleBlocks = blocks.filter((block) =>
-        !(settings.commandBlocks && block.commandFrom !== undefined) &&
-        shouldShowHeader(settings.headerDisplay, block.hasParameters));
+      const visibleBlocks = blocks.filter((block) => hasFoldableHeader(block, settings));
       const overrides = new Map<number, FoldState>();
       for (const block of previous.blocks) {
         const override = previous.overrides.get(block.from);
@@ -493,6 +501,13 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
           candidate.from === from && candidate.to === to && candidate.fold === block.fold &&
           candidate.previewLines === block.previewLines)) {
           overrides.set(from, override);
+        }
+      }
+      if (bulkAction === 'reset-folds') overrides.clear();
+      else if (bulkAction) {
+        for (const block of visibleBlocks) {
+          const override = noteFoldOverride(block, settings, bulkAction);
+          if (override) overrides.set(block.from, override);
         }
       }
       const folds = foldedBlocks(visibleBlocks, settings, transaction.state, overrides);
@@ -508,6 +523,15 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
           candidate.from === from && candidate.terminal?.output?.from === outputFrom &&
           candidate.terminal.output.to === outputTo && candidate.terminal.output.fold === output.fold &&
           candidate.terminal.output.previewLines === output.previewLines)) mappedOutputs.set(from, open);
+      }
+      if (bulkAction === 'reset-folds') mappedOutputs.clear();
+      else if (bulkAction) {
+        const outputOverride = noteOutputOverride(bulkAction);
+        if (outputOverride) {
+          for (const block of blocks) {
+            if (block.terminal?.output) mappedOutputs.set(block.from, outputOverride);
+          }
+        }
       }
       const outputs = outputStates(blocks, settings, transaction.state, mappedOutputs);
       const mappedAnsiEditing = new Set<number>();
@@ -577,6 +601,32 @@ export function createEditorHeaders(getSettings: () => MottoSettings): { extensi
     ],
     refresh: () => {
       for (const view of views) view.dispatch({ effects: refresh.of(null) });
+    },
+    setNoteFolds: (editor, action, checking) => {
+      const view = [...views].find((candidate) => candidate.state.field(editorInfoField, false)?.editor === editor);
+      if (!view) return false;
+      const { state } = view;
+      const { livePreview, blocks } = state.field(field);
+      if (!livePreview) return false;
+      if (!checking) {
+        const settings = getSettings();
+        const affected = blocks.find((block) => {
+          const fold = noteFoldOverride(block, settings, action) ??
+            (action === 'reset-folds' ? resolveFoldState(block, settings) : 'expanded');
+          if (hasFoldableHeader(block, settings) && hiddenBodyContainsSelection(block, settings, state, fold)) return true;
+          const output = block.terminal?.output;
+          if (!settings.commandBlocks || !output || !insideOutput(output, state)) return false;
+          if (action === 'close-outputs') return true;
+          if (action !== 'reset-folds') return false;
+          const defaults = initialOutputState(output);
+          return !defaults.open || outputPreviewLineCount(output, defaults) !== undefined;
+        });
+        view.dispatch({
+          effects: changeNoteFolds.of(action),
+          ...(affected ? { selection: { anchor: affected.from }, scrollIntoView: true } : {}),
+        });
+      }
+      return true;
     },
   };
 }

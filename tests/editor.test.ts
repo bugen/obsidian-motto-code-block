@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { EditorSelection, EditorState, StateEffect } from '@codemirror/state';
 import { EditorView, keymap, runScopeHandlers } from '@codemirror/view';
-import { editorLivePreviewField } from 'obsidian';
+import { App, editorInfoField, editorLivePreviewField, type Editor } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ansiIcon from '../src/ansi.svg';
 import { createEditorHeaders } from '../src/editor';
@@ -16,16 +16,23 @@ const source = 'Intro\n\n```ts file:main.ts\nconst n = 1;\n```\n\n```bash title:
 function fixture(livePreview = true, doc = source, initialSettings: MottoSettings = DEFAULT_SETTINGS) {
   let settings = { ...initialSettings };
   const headers = createEditorHeaders(() => settings);
-  const view = new EditorView({
-    state: EditorState.create({
-      doc,
-      extensions: [editorLivePreviewField.init(() => livePreview), headers.extension],
-    }),
-    parent: document.body,
-  });
-  views.push(view);
+  const mount = (preview = livePreview) => {
+    const editor = {} as Editor;
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [
+          editorInfoField.init(() => ({ app: new App(), file: null, hoverPopover: null, editor })),
+          editorLivePreviewField.init(() => preview), headers.extension,
+        ],
+      }),
+      parent: document.body,
+    });
+    views.push(view);
+    return { view, editor };
+  };
   return {
-    view, headers,
+    ...mount(), headers, mount,
     updateSettings(value: typeof settings) { settings = value; headers.refresh(); },
   };
 }
@@ -38,6 +45,72 @@ afterEach(() => {
 });
 
 describe('live preview headers', () => {
+  it('changes headed bodies and paired outputs independently in the active Live Preview editor', () => {
+    const doc = [
+      'Intro', '```js fold\nfolded()\n```', '```js title:Default\none()\ntwo()\n```',
+      '```js\nheaderless()\n```', '```js fold exclude\nexcluded()\n```',
+      '```sh expand:1\npwd\nls\n```\n```ansi expand:1\n/work\nfile\n```',
+      '```sh\nuname\n```\n```plaintext\nLinux\n```',
+    ].join('\n\n');
+    const { view, editor, headers, mount } = fixture(true, doc, {
+      ...DEFAULT_SETTINGS, defaultFoldState: 'partial', partialFoldLines: 1,
+    });
+    const other = mount();
+    const sourceEditor = mount(false);
+    const states = (pane = view) => [...pane.dom.querySelectorAll<HTMLElement>('.motto-header')]
+      .map((header) => header.dataset.foldState);
+    const outputs = () => [...view.dom.querySelectorAll('.motto-command-output code')].map((code) => code.textContent);
+    view.dispatch({ selection: { anchor: doc.indexOf('two()') } });
+    expect(headers.setNoteFolds(editor, 'fold-blocks', true)).toBe(true);
+    expect(states()).toEqual(['folded', 'expanded', 'partial']);
+    expect(headers.setNoteFolds(sourceEditor.editor, 'open-outputs', false)).toBe(false);
+    expect(states(sourceEditor.view)).toEqual([]);
+    headers.setNoteFolds(editor, 'fold-blocks', false);
+    expect(states()).toEqual(['folded', 'folded', 'folded']);
+    expect(view.state.selection.main.head).toBe(doc.indexOf('```js title:Default'));
+    expect(view.dom.textContent).toContain('headerless()');
+    expect(view.dom.textContent).toContain('excluded()');
+    expect(outputs()).toEqual([]);
+
+    headers.setNoteFolds(editor, 'expand-blocks', false);
+    expect(states()).toEqual(['expanded', 'expanded', 'expanded']);
+    expect(outputs()).toEqual(['/work\nfile']);
+    expect(view.dom.querySelector('.motto-command-output .motto-partial-codeblock')).not.toBeNull();
+    headers.setNoteFolds(editor, 'fold-blocks', false);
+    headers.setNoteFolds(editor, 'open-outputs', false);
+    expect(states()).toEqual(['folded', 'folded', 'expanded']);
+    expect(outputs()).toEqual(['/work\nfile', 'Linux']);
+    expect(view.dom.querySelector('.motto-command-output .motto-partial-codeblock')).toBeNull();
+    const cursor = doc.indexOf('Linux');
+    view.dispatch({ selection: { anchor: cursor } });
+    headers.setNoteFolds(editor, 'open-outputs', false);
+    expect(view.state.selection.main.head).toBe(cursor);
+    headers.setNoteFolds(editor, 'close-outputs', false);
+    expect(view.state.selection.main.head).toBe(doc.indexOf('```sh\nuname'));
+    expect(states()).toEqual(['folded', 'folded', 'expanded']);
+    expect(outputs()).toEqual([]);
+
+    headers.setNoteFolds(editor, 'reset-folds', false);
+    expect(states()).toEqual(['folded', 'partial', 'partial']);
+    expect(outputs()).toEqual([]);
+    headers.setNoteFolds(editor, 'expand-blocks', false);
+    expect(outputs()).toEqual(['/work\nfile']);
+    expect(view.dom.querySelector('.motto-command-output .motto-partial-codeblock')).not.toBeNull();
+    expect(states(other.view)).toEqual(['folded', 'partial', 'partial']);
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it('restores a partial output default even when the editor selection is inside that output', () => {
+    const doc = 'Intro\n\n```sh\npwd\n```\n```ansi expand:1\nfirst\nsecond\n```';
+    const { view, editor, headers } = fixture(true, doc);
+    view.dispatch({ selection: { anchor: doc.indexOf('second') } });
+    expect(view.dom.querySelector('.motto-command-output-source')).not.toBeNull();
+    headers.setNoteFolds(editor, 'reset-folds', false);
+    expect(view.dom.querySelector('.motto-command-output-source')).toBeNull();
+    expect(view.dom.querySelector('.motto-command-output .motto-partial-codeblock')).not.toBeNull();
+    expect(view.state.selection.main.head).toBe(doc.indexOf('```sh'));
+  });
+
   it('updates configured command languages without requiring them in the general include list', () => {
     const doc = 'Intro\n\n```dash\npwd\n```\n```ansi expand\n/work\n```';
     const { view, updateSettings } = fixture(true, doc);

@@ -1,4 +1,5 @@
 import { StateEffect, StateField } from '@codemirror/state';
+import type { MarkdownFileInfo } from 'obsidian';
 
 if (typeof Node !== 'undefined') {
   Object.assign(window, {
@@ -26,6 +27,10 @@ if (typeof Node !== 'undefined') {
 }
 
 export const setLivePreview = StateEffect.define<boolean>();
+export const editorInfoField = StateField.define<Pick<MarkdownFileInfo, 'editor'> | null>({
+  create: () => null,
+  update: (value) => value,
+});
 export const editorLivePreviewField = StateField.define<boolean>({
   create: () => true,
   update(value, transaction) {
