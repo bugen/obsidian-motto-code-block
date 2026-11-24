@@ -127,11 +127,12 @@ class CommandWidget extends WidgetType {
   readonly prompt: string;
   readonly output: boolean;
   readonly open: boolean;
+  readonly partial: boolean;
   readonly styles: MottoSettings['outputToggleStyles'];
   readonly tapMyHippo: boolean;
 
   constructor(
-    from: number, text: string | null, prompt: string, output: boolean, open: boolean,
+    from: number, text: string | null, prompt: string, output: boolean, open: boolean, partial: boolean,
     styles: MottoSettings['outputToggleStyles'], tapMyHippo: boolean,
   ) {
     super();
@@ -140,6 +141,7 @@ class CommandWidget extends WidgetType {
     this.prompt = prompt;
     this.output = output;
     this.open = open;
+    this.partial = partial;
     this.styles = styles;
     this.tapMyHippo = tapMyHippo;
   }
@@ -150,14 +152,14 @@ class CommandWidget extends WidgetType {
   }
 
   override eq(other: CommandWidget): boolean {
-    return this.sameContent(other) && this.open === other.open && this.styles === other.styles &&
+    return this.sameContent(other) && this.open === other.open && this.partial === other.partial && this.styles === other.styles &&
       this.tapMyHippo === other.tapMyHippo;
   }
 
   override updateDOM(marker: HTMLElement, _view: EditorView, previous: CommandWidget): boolean {
     if (!this.sameContent(previous)) return false;
     const button = marker.querySelector<HTMLButtonElement>('.motto-output-toggle');
-    if (button) setOutputToggle(button, this.open, this.styles, this.tapMyHippo);
+    if (button) setOutputToggle(button, this.open, this.styles, this.tapMyHippo, this.partial);
     return true;
   }
 
@@ -179,7 +181,7 @@ class CommandWidget extends WidgetType {
     }
     marker.append(commandTools(document, this.text, this.open, this.styles, this.output ? () => {
       dispatchFoldClick(view, this.from, changeOutput.of({ from: this.from, action: 'toggle' }));
-    } : undefined, this.tapMyHippo));
+    } : undefined, this.tapMyHippo, this.partial));
     return marker;
   }
 
@@ -376,6 +378,8 @@ function decorate(
       const output = terminal.output;
       const outputState = outputs.get(block.from);
       const open = outputState?.open === true;
+      const outputPreview = output && outputState ? outputPreviewLineCount(output, outputState) : undefined;
+      const partialOutput = open && outputPreview !== undefined;
       const count = preview ?? block.lineCount;
       const lastCommand = commands[commands.length - 1];
       let commandIndex = 0;
@@ -408,14 +412,15 @@ function decorate(
         }
         decorations.push(Decoration.widget({
           widget: new CommandWidget(block.from, block.text.slice(command.from, command.to), prompt,
-            output !== undefined && index === commands.length - 1 && command.endLine < count, open,
+            output !== undefined && index === commands.length - 1 && command.endLine < count, open, partialOutput,
             settings.outputToggleStyles, settings.tapMyHippo),
           side: -1,
         }).range(state.doc.line(block.startLine + command.startLine + 2).from));
       }
       if (output) {
         if (commands.length === 0) decorations.push(Decoration.widget({
-          widget: new CommandWidget(block.from, null, '', true, open, settings.outputToggleStyles, settings.tapMyHippo),
+          widget: new CommandWidget(block.from, null, '', true, open, partialOutput,
+            settings.outputToggleStyles, settings.tapMyHippo),
           block: true, side: -1,
         }).range(output.from));
         if (!open || preview !== undefined) {
@@ -425,8 +430,7 @@ function decorate(
             decorations.push(Decoration.line({ class: 'motto-command-output-source' }).range(state.doc.line(line + 1).from));
           }
         } else decorations.push(Decoration.replace({
-          block: true, widget: new OutputWidget(block.from, output,
-            outputState ? outputPreviewLineCount(output, outputState) : undefined),
+          block: true, widget: new OutputWidget(block.from, output, outputPreview),
         }).range(output.from, output.to));
       }
       continue;

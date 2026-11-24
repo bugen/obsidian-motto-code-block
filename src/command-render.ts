@@ -62,9 +62,10 @@ const OUTPUT_TOGGLE_GLYPHS: Record<Exclude<OutputToggleIcon, 'hippo'>, readonly 
 };
 
 export function setOutputToggle(
-  button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles'], tapMyHippo = false,
+  button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles'], tapMyHippo = false, partial = false,
 ): void {
-  const label = open ? 'Hide output' : 'Show output';
+  const closes = open && !partial;
+  const label = partial ? 'Show full output' : closes ? 'Hide output' : 'Show output';
   const tools = button.parentElement;
   if (tools?.classList.contains('motto-command-tools')) {
     for (const mode of COLOR_MODES) {
@@ -79,7 +80,7 @@ export function setOutputToggle(
     const icon = button.createSpan();
     icon.className = `motto-output-icon motto-output-icon-${mode}`;
     icon.setAttribute('aria-hidden', 'true');
-    const closing = open !== style.reverseIcons;
+    const closing = closes !== style.reverseIcons;
     if (style.icon === 'hippo') {
       icon.classList.add('motto-output-icon-hippo');
       const mark = icon.createSpan();
@@ -94,12 +95,12 @@ export function setOutputToggle(
     if (style.overrideColor) button.style.setProperty(property, style.color);
     else button.style.removeProperty(property);
   }
-  updateHippoSpeech(button, open, styles, tapMyHippo);
+  updateHippoSpeech(button, closes, styles, tapMyHippo);
 }
 
 export function commandTools(
   document: Document, text: string | null, open: boolean, styles: MottoSettings['outputToggleStyles'],
-  toggle?: () => void, tapMyHippo = false,
+  toggle?: () => void, tapMyHippo = false, partial = false,
 ): HTMLElement {
   const tools = createEl(document, 'span');
   tools.className = 'motto-command-tools';
@@ -107,7 +108,7 @@ export function commandTools(
     const button = tools.createEl('button');
     button.className = 'motto-command-button motto-output-toggle';
     button.type = 'button';
-    setOutputToggle(button, open, styles, tapMyHippo);
+    setOutputToggle(button, open, styles, tapMyHippo, partial);
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();

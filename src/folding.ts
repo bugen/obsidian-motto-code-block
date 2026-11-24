@@ -36,11 +36,9 @@ export function outputPreviewLineCount(block: CodeBlock, state: OutputState): nu
 }
 
 export function nextOutputState(block: CodeBlock, state: OutputState): OutputState {
-  if (state.open && state.fullyExpanded) {
-    const preview = { open: true, fullyExpanded: false };
-    if (outputPreviewLineCount(block, preview) !== undefined) return preview;
-  }
-  return { ...state, open: !state.open };
+  if (!state.open) return { open: true, fullyExpanded: false };
+  if (outputPreviewLineCount(block, state) !== undefined) return { open: true, fullyExpanded: true };
+  return { open: false, fullyExpanded: false };
 }
 
 export function previewLineCount(block: CodeBlock, settings: MottoSettings): number {
@@ -55,6 +53,7 @@ export function resolveFoldState(block: CodeBlock, settings: MottoSettings, over
 }
 
 export function nextFoldState(block: CodeBlock, settings: MottoSettings, current: FoldState): FoldState {
-  if (current !== 'expanded') return 'expanded';
-  return resolveFoldState(block, settings) === 'partial' ? 'partial' : 'folded';
+  if (current === 'expanded') return 'folded';
+  if (current === 'folded' && resolveFoldState(block, settings) === 'partial') return 'partial';
+  return 'expanded';
 }

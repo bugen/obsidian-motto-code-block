@@ -180,8 +180,6 @@ describe('live preview headers', () => {
     output().querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
     expect(output().querySelector('.motto-partial-codeblock')).toBeNull();
     view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
-    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
-    view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
     expect(output()).toBeNull();
     view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
     output().querySelector<HTMLButtonElement>('[aria-label="Edit source"]')!.click();
@@ -563,6 +561,8 @@ describe('live preview headers', () => {
     expect(view.dom.querySelector('.motto-partial-codeblock, .motto-expand-button')).toBeNull();
     expect(view.dom.querySelectorAll('.motto-line-number')).toHaveLength(3);
     view.dom.querySelector<HTMLElement>('.motto-header')!.click();
+    expect(view.dom.querySelector('.motto-ansi-standalone')).toBeNull();
+    view.dom.querySelector<HTMLElement>('.motto-header')!.click();
     expect(view.dom.querySelector('.motto-header')?.getAttribute('data-fold-state')).toBe('partial');
     view.dom.querySelector<HTMLButtonElement>('.motto-output-tools button')!.click();
     expect(view.dom.querySelector('.motto-ansi-standalone, .motto-expand-button')).toBeNull();
@@ -712,39 +712,46 @@ describe('live preview headers', () => {
       output.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
       expect(view.dom.querySelector('.motto-partial-codeblock')).toBeNull();
       view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+      expect(view.dom.querySelector('.motto-command-output')).toBeNull();
+      view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
       expect(view.dom.querySelector<HTMLElement>('.motto-partial-codeblock')?.style.getPropertyValue('--motto-preview-lines')).toBe('5');
       expect(view.dom.querySelector('.motto-output-toggle')?.getAttribute('aria-expanded')).toBe('true');
     } else {
       view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
       expect(view.dom.querySelector('.motto-command-output')).toBeNull();
+      view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+      expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe(text);
+      expect(view.dom.querySelector('.motto-partial-codeblock')).toBeNull();
     }
     expect(view.dom.querySelector('.motto-header')).toBeNull();
     expect(view.state.doc.toString()).toBe(doc);
   });
 
-  it.each(['expand', 'unfold'])('returns fully expanded output to its %s preview and resets changed counts', (option) => {
+  it.each(['expand', 'unfold'])('cycles %s output through all three states and resets changed counts', (option) => {
     const text = 'first\nsecond\nthird\nfourth';
     const doc = `Intro\n\n\`\`\`sh\npwd\n\`\`\`\n\`\`\`ansi ${option}:2\n\x1b[32m${text}\x1b[0m\n\`\`\``;
     const { view, updateSettings } = fixture(true, doc);
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
-    const toggle = () => view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    const button = () => view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    const toggle = () => button().click();
     const preview = () => view.dom.querySelector<HTMLElement>('.motto-partial-codeblock');
     expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
+    expect(button().getAttribute('aria-label')).toBe('Show full output');
     view.dom.querySelector<HTMLButtonElement>('.motto-output-tools .motto-command-copy')!.click();
     expect(write).toHaveBeenLastCalledWith(text);
     toggle();
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe(text);
+    expect(preview()).toBeNull();
+    expect(button().getAttribute('aria-label')).toBe('Hide output');
+    toggle();
     expect(view.dom.querySelector('.motto-command-output')).toBeNull();
+    expect(button().getAttribute('aria-expanded')).toBe('false');
     toggle();
     expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
-    view.dom.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
-    expect(preview()).toBeNull();
-    expect(view.dom.querySelector('.motto-expand-button')).toBeNull();
+    toggle();
     updateSettings(parseSettings({ headerDisplay: 'none', outputToggleStyles: { light: { icon: 'hippo' } } }));
     view.dispatch({ changes: { from: 0, insert: 'Before\n\n' } });
     expect(preview()).toBeNull();
-    toggle();
-    expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
-    expect(view.dom.querySelector('.motto-output-toggle')?.getAttribute('aria-expanded')).toBe('true');
     toggle();
     expect(view.dom.querySelector('.motto-command-output')).toBeNull();
     toggle();
@@ -752,6 +759,7 @@ describe('live preview headers', () => {
     expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe(text);
     view.dom.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
     expect(preview()).toBeNull();
+    expect(button().getAttribute('aria-label')).toBe('Hide output');
     const from = view.state.doc.toString().indexOf(`${option}:2`) + option.length + 1;
     view.dispatch({ changes: { from, to: from + 1, insert: '1' } });
     expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('1');
@@ -878,7 +886,7 @@ describe('live preview headers', () => {
     expect(view.state.doc.toString()).toBe(doc);
   });
 
-  it('toggles partial/full views from the header and footer and preserves manual expansion through refresh', () => {
+  it('cycles partial, full and hidden code from the header and preserves manual expansion through refresh', () => {
     const doc = 'Intro\n\n```js expand:2\nfirst()\nsecond()\nthird()\nlast()\n```';
     const { view, updateSettings } = fixture(true, doc);
     const header = () => view.dom.querySelector<HTMLElement>('.motto-header')!;
@@ -892,6 +900,9 @@ describe('live preview headers', () => {
     view.dispatch({ changes: { from: 0, insert: 'Before\n\n' } });
     updateSettings({ ...DEFAULT_SETTINGS, defaultFoldState: 'folded', partialFoldLines: 1 });
     expect(header().dataset.foldState).toBe('expanded');
+    header().click();
+    expect(header().dataset.foldState).toBe('folded');
+    expect(view.contentDOM.textContent).not.toContain('first()');
     header().click();
     expect(header().dataset.foldState).toBe('partial');
     expect(view.dom.querySelectorAll('.motto-line-number')).toHaveLength(2);
@@ -915,6 +926,11 @@ describe('live preview headers', () => {
     expect(view.dom.querySelectorAll('.motto-line-number')).toHaveLength(7);
     expect([...view.dom.querySelectorAll('.motto-expand-button')].map((button) => button.textContent))
       .toEqual(['Show all (2 more lines)', 'Show all (3 more lines)']);
+    const defaultHeader = [...view.dom.querySelectorAll<HTMLElement>('.motto-header')][2]!;
+    for (const state of ['expanded', 'folded', 'partial', 'expanded']) {
+      defaultHeader.click();
+      expect(defaultHeader.dataset.foldState).toBe(state);
+    }
   });
 
   it('keeps visible lines editable but expands for hidden cursors and whole-body selections', () => {
@@ -1319,14 +1335,16 @@ describe('live preview headers', () => {
       view.dom.before(sourceView);
       sourceView.append(view.dom);
       const output = () => view.dom.querySelector<HTMLElement>('.motto-command-output')!;
+      const toggle = () => view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
       expect(output().parentElement).toBe(view.contentDOM);
       expect(getComputedStyle(output()).display).toBe('grid');
       output().querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
       expect(output().classList.contains('motto-command-output-partial')).toBe(false);
-      view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
-      expect(getComputedStyle(output()).display).toBe('grid');
-      view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+      toggle();
       expect(view.dom.querySelector('.motto-command-output')).toBeNull();
+      toggle();
+      expect(output().classList.contains('motto-command-output-partial')).toBe(true);
+      expect(getComputedStyle(output()).display).toBe('grid');
       expect(getComputedStyle(view.contentDOM.querySelector('.cm-line')!).display).toBe('block');
       expect(view.state.doc.toString()).toBe(doc);
     } finally {

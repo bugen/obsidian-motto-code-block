@@ -142,7 +142,7 @@ export class ReadingHeaders {
           // Keep the state object captured by the existing output toggle.
           if (mount.outputState) Object.assign(mount.outputState, state);
           else mount.outputState = state;
-          if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputOpen(state.open);
+          if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputState(state);
         }
       }
       if (!mount.header) continue;
@@ -266,6 +266,7 @@ export class ReadingHeaders {
       const preview = outputPreviewLineCount(mount.block, state);
       const expand = () => this.preserveScroll(pre, () => {
         state.fullyExpanded = true;
+        if (owner.layout instanceof ReadingCommandView) owner.layout.setOutputState(state);
         this.renderOutputs();
       });
       let output: ReadingOutputView;
@@ -320,10 +321,10 @@ export class ReadingHeaders {
       const output = mount.block.terminal.output;
       const outputState = mount.outputState;
       mount.layout = new ReadingCommandView(pre, mount.block, mount.wrappedCommands, settings.outputToggleStyles,
-        mount.foldState, preview, outputState?.open === true,
+        mount.foldState, preview, outputState,
         output && outputState ? () => this.preserveScroll(pre, () => {
           Object.assign(outputState, nextOutputState(output, outputState));
-          if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputOpen(outputState.open);
+          if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputState(outputState);
           this.renderOutputs();
         }) : undefined, settings.tapMyHippo, settings.commandSpacing);
       return;

@@ -4,6 +4,7 @@ import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, setO
 import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
+import { outputPreviewLineCount, type OutputState } from './folding';
 
 export class ReadingCommandView {
   private readonly pre: HTMLElement;
@@ -11,23 +12,26 @@ export class ReadingCommandView {
   private readonly observer: MutationObserver;
   private readonly styles: MottoSettings['outputToggleStyles'];
   private readonly tapMyHippo: boolean;
-  private open: boolean;
+  private readonly output: CodeBlock | undefined;
+  private outputState: OutputState | undefined;
 
   constructor(
     pre: HTMLElement, block: CodeBlock, wrappedCommands: Set<number>, styles: MottoSettings['outputToggleStyles'],
     foldState: FoldState, preview: number | undefined,
-    open: boolean, toggle?: () => void, tapMyHippo = false, spacing: CommandSpacing = DEFAULT_SETTINGS.commandSpacing,
+    outputState: OutputState | undefined, toggle?: () => void,
+    tapMyHippo = false, spacing: CommandSpacing = DEFAULT_SETTINGS.commandSpacing,
   ) {
     this.pre = pre;
     this.styles = styles;
-    this.open = open;
+    this.output = block.terminal?.output;
+    this.outputState = outputState;
     this.tapMyHippo = tapMyHippo;
     const document = pre.ownerDocument;
     const code = pre.querySelector<HTMLElement>(':scope > code')!;
     const view = this.view = createEl(document, 'div');
     view.className = `motto-command-view motto-command-spacing-${spacing}`;
     view.classList.toggle('motto-command-partial', preview !== undefined);
-    view.classList.toggle('motto-command-output-open', open && foldState === 'expanded');
+    view.classList.toggle('motto-command-output-open', this.outputState?.open === true && foldState === 'expanded');
     view.hidden = foldState === 'folded' || pre.hidden;
     pre.before(view);
     const prompt = commandPromptSymbol(block.language, block.terminal?.user);
@@ -60,12 +64,14 @@ export class ReadingCommandView {
         const commandCode = commandPre.createEl('code');
         commandCode.className = code.className;
         commandCode.append(cloneCodeRange(code, command.from, Math.min(command.to, cutoff)));
-        const tools = commandTools(document, block.text.slice(command.from, command.to), this.open, this.styles,
-          index === commands.length - 1 && command.to <= cutoff ? toggle : undefined, this.tapMyHippo);
+        const tools = commandTools(document, block.text.slice(command.from, command.to),
+          this.outputState?.open === true, this.styles,
+          index === commands.length - 1 && command.to <= cutoff ? toggle : undefined, this.tapMyHippo, this.partialOutput);
         row.append(tools);
       }
       if (commands.length === 0 && toggle) {
-        view.append(commandTools(document, null, this.open, this.styles, toggle, this.tapMyHippo));
+        view.append(commandTools(document, null, this.outputState?.open === true, this.styles,
+          toggle, this.tapMyHippo, this.partialOutput));
       }
     };
     render();
@@ -82,11 +88,16 @@ export class ReadingCommandView {
     this.observer.observe(code, { childList: true, characterData: true, subtree: true });
   }
 
-  setOutputOpen(open: boolean): void {
-    this.open = open;
-    this.view.classList.toggle('motto-command-output-open', open);
+  private get partialOutput(): boolean {
+    return this.outputState?.open === true && this.output !== undefined &&
+      outputPreviewLineCount(this.output, this.outputState) !== undefined;
+  }
+
+  setOutputState(state: OutputState): void {
+    this.outputState = state;
+    this.view.classList.toggle('motto-command-output-open', state.open);
     const button = this.view.querySelector<HTMLButtonElement>('.motto-output-toggle');
-    if (button) setOutputToggle(button, open, this.styles, this.tapMyHippo);
+    if (button) setOutputToggle(button, state.open, this.styles, this.tapMyHippo, this.partialOutput);
   }
 
   destroy(): void {

@@ -259,9 +259,7 @@ describe('reading mode headers', () => {
     output().querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
     expect(output().querySelector('.motto-partial-codeblock')).toBeNull();
     shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
-    expect(output().querySelector('.motto-partial-codeblock')).not.toBeNull();
-    shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
-    expect(output().hidden).toBe(true);
+    expect(output()?.hidden ?? true).toBe(true);
     updateSettings(DEFAULT_SETTINGS);
     expect(shell.section.querySelector('.motto-output-toggle')).toBeNull();
     expect(native.pre.classList.contains('motto-command-native')).toBe(false);
@@ -748,16 +746,21 @@ describe('reading mode headers', () => {
       output.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
       expect(ansi.section.querySelector('.motto-partial-codeblock')).toBeNull();
       shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+      expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden ?? true).toBe(true);
+      shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
       expect(ansi.section.querySelector<HTMLElement>('.motto-partial-codeblock')?.style.getPropertyValue('--motto-preview-lines')).toBe('5');
       expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(false);
     } else {
       shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
       expect(output.hidden).toBe(true);
+      shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+      expect(output.hidden).toBe(false);
+      expect(output.querySelector('.motto-partial-codeblock')).toBeNull();
     }
     expect(shell.section.querySelector('.motto-header')).toBeNull();
   });
 
-  it.each(['expand', 'unfold'])('returns fully expanded output to its %s preview and resets changed counts', async (option) => {
+  it.each(['expand', 'unfold'])('cycles %s output through all three states and resets changed counts', async (option) => {
     const text = 'first\nsecond\nthird\nfourth';
     const source = `\`\`\`sh\npwd\n\`\`\`\n\`\`\`ansi ${option}:2\n\x1b[32m${text}\x1b[0m\n\`\`\``;
     const { renderer, context, updateSettings, updateSource } = fixture(source);
@@ -768,32 +771,35 @@ describe('reading mode headers', () => {
       await renderer.process(shell.section, context);
       await renderer.process(ansi.section, context);
     };
-    const toggle = () => shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    const button = () => shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    const toggle = () => button().click();
     const preview = () => ansi.section.querySelector<HTMLElement>('.motto-partial-codeblock');
+    const visible = () => ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden === false;
     await process();
     expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
+    expect(button().getAttribute('aria-label')).toBe('Show full output');
     ansi.section.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
     expect(write).toHaveBeenLastCalledWith(text);
     toggle();
-    expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(true);
-    toggle();
-    expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
-    ansi.section.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
+    expect(visible()).toBe(true);
     expect(preview()).toBeNull();
-    expect(ansi.section.querySelector('.motto-expand-button')).toBeNull();
+    expect(button().getAttribute('aria-label')).toBe('Hide output');
+    toggle();
+    expect(visible()).toBe(false);
+    expect(button().getAttribute('aria-expanded')).toBe('false');
+    toggle();
+    expect(visible()).toBe(true);
+    expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
+    toggle();
     updateSettings(parseSettings({ headerDisplay: 'none', outputToggleStyles: { light: { icon: 'hippo' } } }));
     expect(preview()).toBeNull();
     toggle();
-    expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
-    expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(false);
-    expect(shell.section.querySelector('.motto-output-toggle')?.getAttribute('aria-expanded')).toBe('true');
-    toggle();
-    expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(true);
+    expect(visible()).toBe(false);
     toggle();
     expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('2');
-    expect(ansi.section.querySelector<HTMLElement>('.motto-command-output')?.hidden).toBe(false);
     ansi.section.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
     expect(preview()).toBeNull();
+    expect(button().getAttribute('aria-label')).toBe('Hide output');
     updateSource(source.replace(`${option}:2`, `${option}:1`));
     await process();
     expect(preview()?.style.getPropertyValue('--motto-preview-lines')).toBe('1');
@@ -978,7 +984,7 @@ describe('reading mode headers', () => {
     expect(native.pre.querySelector('button')).toBe(native.copy);
   });
 
-  it('supports partial/full toggles with or without numbers and preserves full native copy text', async () => {
+  it('cycles partial, full and hidden code while preserving full native copy text', async () => {
     const content = 'first()\nsecond()\nthird()\nlast()';
     const { renderer, context, updateSettings, children } = fixture(`\`\`\`js expand:2\n${content}\n\`\`\``);
     const native = block(content);
@@ -991,6 +997,9 @@ describe('reading mode headers', () => {
     expect(native.pre.classList.contains('motto-partial-codeblock')).toBe(false);
     updateSettings({ ...DEFAULT_SETTINGS, defaultFoldState: 'folded', partialFoldLines: 1, lineNumbers: 'none' });
     expect(header().dataset.foldState).toBe('expanded');
+    header().click();
+    expect(header().dataset.foldState).toBe('folded');
+    expect(native.pre.classList.contains('motto-code-block-collapsed')).toBe(true);
     header().click();
     expect(header().dataset.foldState).toBe('partial');
     expect(native.pre.style.getPropertyValue('--motto-preview-lines')).toBe('2');
@@ -1023,6 +1032,11 @@ describe('reading mode headers', () => {
     updateSettings({ ...DEFAULT_SETTINGS, defaultFoldState: 'partial', partialFoldLines: 1 });
     expect(natives[2]!.pre.style.getPropertyValue('--motto-preview-lines')).toBe('2');
     expect(natives[3]!.pre.style.getPropertyValue('--motto-preview-lines')).toBe('1');
+    const defaultHeader = natives[3]!.section.querySelector<HTMLElement>('.motto-header')!;
+    for (const state of ['expanded', 'folded', 'partial', 'expanded']) {
+      defaultHeader.click();
+      expect(defaultHeader.dataset.foldState).toBe(state);
+    }
     updateSettings({ ...DEFAULT_SETTINGS, defaultFoldState: 'partial', headerDisplay: 'none' });
     expect(natives.every(({ pre }) => !pre.classList.contains('motto-partial-codeblock'))).toBe(true);
     expect(document.querySelector('.motto-expand-button')).toBeNull();
