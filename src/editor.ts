@@ -1,13 +1,13 @@
 import { MapMode, Prec, StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
-import { editorInfoField, editorLivePreviewField, type Editor } from 'obsidian';
+import { editorInfoField, editorLivePreviewField, Notice, type Editor } from 'obsidian';
 import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
 import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { formatCommandPrompt, splitCommands, type CommandPrompt, type CommandRange } from './commands';
-import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
+import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle, terminalDeleteButton } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 
@@ -28,6 +28,33 @@ const changeOutput = StateEffect.define<{ from: number; action: 'toggle' | 'expa
 const changeCommandWrap = StateEffect.define<{ from: number; wrap: boolean }>();
 const changeNoteFolds = StateEffect.define<NoteFoldAction>();
 
+type DeleteTerminalBlock = (view: EditorView, commandFrom: number, scope: 'block' | 'output') => void;
+const deleteBlockLabel = 'Delete command block and its output';
+
+function measureDeleteButtonPlacement(view: EditorView): void {
+  view.requestMeasure({
+    key: measureDeleteButtonPlacement,
+    read: ({ contentDOM, scrollDOM }) => {
+      const buttons = contentDOM.querySelectorAll<HTMLButtonElement>('.motto-command-delete-anchor > button.motto-terminal-delete');
+      const frame = scrollDOM.getBoundingClientRect();
+      const document = scrollDOM.ownerDocument;
+      const left = Math.max(0, frame.left + scrollDOM.clientLeft);
+      const right = Math.min(document.documentElement.clientWidth, frame.left + scrollDOM.clientLeft + scrollDOM.clientWidth);
+      return [...buttons].map((button) => {
+        const line = button.parentElement!;
+        const bounds = line.getBoundingClientRect();
+        const rtl = document.defaultView?.getComputedStyle(line).direction === 'rtl';
+        const room = rtl ? bounds.left - left : right - bounds.right;
+        // A 28 px button plus a small buffer before the pane's clipping edge.
+        return { button, outside: bounds.width > 0 && right > left && room >= 30 };
+      });
+    },
+    write: (placements) => {
+      for (const { button, outside } of placements) button.classList.toggle('motto-delete-outside', outside);
+    },
+  });
+}
+
 function dispatchFoldClick(view: EditorView, from: number, effect: StateEffect<unknown>): void {
   // Keep the viewport from following the document bottom when a block changes height.
   const effects = typeof view.scrollSnapshot === 'function' ? [effect, view.scrollSnapshot()] : [effect];
@@ -38,12 +65,14 @@ class HeaderWidget extends WidgetType {
   readonly block: CodeBlock;
   readonly settings: MottoSettings;
   readonly foldState: FoldState;
+  private readonly remove: DeleteTerminalBlock | undefined;
 
-  constructor(block: CodeBlock, settings: MottoSettings, foldState: FoldState) {
+  constructor(block: CodeBlock, settings: MottoSettings, foldState: FoldState, remove?: DeleteTerminalBlock) {
     super();
     this.block = block;
     this.settings = settings;
     this.foldState = foldState;
+    this.remove = remove;
   }
 
   private sameContent(other: HeaderWidget): boolean {
@@ -55,7 +84,7 @@ class HeaderWidget extends WidgetType {
       this.block.terminal?.cwd === other.block.terminal?.cwd &&
       this.block.terminal?.promptText === other.block.terminal?.promptText &&
       this.block.terminal?.promptDisplay === other.block.terminal?.promptDisplay &&
-      Boolean(this.block.terminal) === Boolean(other.block.terminal) &&
+      Boolean(this.block.terminal) === Boolean(other.block.terminal) && this.remove === other.remove &&
       this.settings.commandBlocks === other.settings.commandBlocks &&
       this.settings.showIcon === other.settings.showIcon && this.settings.showLanguage === other.settings.showLanguage &&
       this.settings.showHeaderCopyButton === other.settings.showHeaderCopyButton;
@@ -82,6 +111,11 @@ class HeaderWidget extends WidgetType {
       },
     });
     if (!header) throw new Error('[Motto Code Block] Cannot mount a disabled header.');
+    const remove = this.remove;
+    if (remove) {
+      header.querySelector('.motto-header-controls')?.prepend(terminalDeleteButton(view.dom.ownerDocument,
+        deleteBlockLabel, () => { remove(view, view.posAtDOM(header), 'block'); }));
+    }
     return header;
   }
 }
@@ -194,31 +228,51 @@ class CommandWidget extends WidgetType {
   }
 }
 
+class DeleteCommandWidget extends WidgetType {
+  private readonly from: number;
+  private readonly remove: DeleteTerminalBlock;
+
+  constructor(from: number, remove: DeleteTerminalBlock) {
+    super();
+    this.from = from;
+    this.remove = remove;
+  }
+
+  override eq(other: DeleteCommandWidget): boolean { return this.from === other.from && this.remove === other.remove; }
+
+  override toDOM(view: EditorView): HTMLElement {
+    return terminalDeleteButton(view.dom.ownerDocument, deleteBlockLabel, () => { this.remove(view, this.from, 'block'); });
+  }
+}
+
 class OutputWidget extends WidgetType {
   private static readonly previews = new WeakMap<HTMLElement, ReturnType<typeof commandOutputPreview>>();
   readonly commandFrom: number;
   readonly block: CodeBlock;
   readonly preview: number | undefined;
+  private readonly remove: DeleteTerminalBlock | undefined;
 
-  constructor(commandFrom: number, block: CodeBlock, preview: number | undefined) {
+  constructor(commandFrom: number, block: CodeBlock, preview: number | undefined, remove?: DeleteTerminalBlock) {
     super();
     this.commandFrom = commandFrom;
     this.block = block;
     this.preview = preview;
+    this.remove = remove;
   }
 
   override eq(other: OutputWidget): boolean {
     return this.commandFrom === other.commandFrom && this.block.from === other.block.from &&
       this.block.language === other.block.language &&
       this.block.startLine === other.block.startLine && this.block.text === other.block.text &&
-      this.block.lineCount === other.block.lineCount && this.preview === other.preview;
+      this.block.lineCount === other.block.lineCount && this.preview === other.preview && this.remove === other.remove;
   }
 
   override toDOM(view: EditorView): HTMLElement {
+    const remove = this.remove;
     const preview = commandOutputPreview(view.dom.ownerDocument, this.block, this.preview, () => {
       dispatchFoldClick(view, this.commandFrom, changeOutput.of({ from: this.commandFrom, action: 'expand' }));
       view.focus();
-    }, () => { editOutput(view, this.block); });
+    }, () => { editOutput(view, this.block); }, remove ? () => { remove(view, this.commandFrom, 'output'); } : undefined);
     OutputWidget.previews.set(preview.element, preview);
     return preview.element;
   }
@@ -338,6 +392,7 @@ function foldedBlocks(
 function decorate(
   blocks: CodeBlock[], settings: MottoSettings, folds: Map<number, FoldState>, state: EditorState,
   outputs: Map<number, OutputState>, ansiEditing: Set<number>, commandWraps: Map<number, boolean>,
+  remove: DeleteTerminalBlock,
 ): Pick<HeaderState, 'decorations' | 'commandScrolls'> {
   const decorations: Range<Decoration>[] = [];
   const commandScrolls: Range<Decoration>[] = [];
@@ -345,11 +400,13 @@ function decorate(
     if (settings.commandBlocks && block.commandFrom !== undefined) continue;
     const foldState = folds.get(block.from) ?? 'expanded';
     const terminal = settings.commandBlocks ? block.terminal : undefined;
+    const canRemoveBlock = terminal && !state.readOnly && !block.unclosed && !terminal.output?.unclosed;
     const preview = foldState === 'partial' ? previewLineCount(block, settings) : undefined;
     const hasHeader = shouldShowHeader(settings.headerDisplay, block.hasParameters);
     if (hasHeader) {
       decorations.push(Decoration.widget({
-        widget: new HeaderWidget(block, settings, foldState), block: true, side: -1,
+        widget: new HeaderWidget(block, settings, foldState, canRemoveBlock && foldState === 'folded' ? remove : undefined),
+        block: true, side: -1,
       }).range(block.from));
       decorations.push(foldState === 'folded'
         ? Decoration.replace({ block: true }).range(block.from, commandEnd(block, settings))
@@ -385,6 +442,12 @@ function decorate(
       const outputPreview = output && outputState ? outputPreviewLineCount(output, outputState) : undefined;
       const partialOutput = open && outputPreview !== undefined;
       const count = preview ?? block.lineCount;
+      if (canRemoveBlock) {
+        const first = commands[0];
+        const anchor = first && first.startLine < count ? state.doc.line(block.startLine + first.startLine + 2).from : block.from;
+        decorations.push(Decoration.line({ class: 'motto-command-delete-anchor' }).range(anchor));
+        decorations.push(Decoration.widget({ widget: new DeleteCommandWidget(block.from, remove), side: -1 }).range(anchor));
+      }
       const promptWidth = prompt.inlineContext
         ? `--motto-command-prompt-width: ${Array.from(prompt.inlineContext + prompt.symbol).length}ch;` : '';
       const lastCommand = commands[commands.length - 1];
@@ -436,7 +499,7 @@ function decorate(
             decorations.push(Decoration.line({ class: 'motto-command-output-source' }).range(state.doc.line(line + 1).from));
           }
         } else decorations.push(Decoration.replace({
-          block: true, widget: new OutputWidget(block.from, output, outputPreview),
+          block: true, widget: new OutputWidget(block.from, output, outputPreview, state.readOnly || output.unclosed ? undefined : remove),
         }).range(output.from, output.to));
       }
       continue;
@@ -482,7 +545,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       const commandWraps = new Map<number, boolean>();
       return {
         livePreview, blocks, folds, overrides, outputs, ansiEditing, commandWraps,
-        ...decorate(blocks, settings, folds, state, outputs, ansiEditing, commandWraps),
+        ...decorate(blocks, settings, folds, state, outputs, ansiEditing, commandWraps, remove),
       };
     },
     update(previous, transaction) {
@@ -490,7 +553,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       const reparse = transaction.docChanged || livePreview !== previous.livePreview ||
         transaction.effects.some((effect) => effect.is(refresh));
       const bulkAction = transaction.effects.find((effect) => effect.is(changeNoteFolds))?.value;
-      if (!reparse && !bulkAction && !transaction.effects.some((effect) =>
+      if (!reparse && transaction.startState.readOnly === transaction.state.readOnly && !bulkAction && !transaction.effects.some((effect) =>
         effect.is(toggleFold) || effect.is(changeOutput) || effect.is(changeCommandWrap)) &&
           !(transaction.selection && (previous.folds.size > 0 || previous.outputs.size > 0 ||
             previous.blocks.some((block) => block.language === 'ansi')))) return previous;
@@ -576,7 +639,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       const ansiEditing = editingAnsiBlocks(blocks, settings, transaction.state, mappedAnsiEditing);
       return {
         livePreview, blocks, folds, overrides, outputs, ansiEditing, commandWraps,
-        ...decorate(blocks, settings, folds, transaction.state, outputs, ansiEditing, commandWraps),
+        ...decorate(blocks, settings, folds, transaction.state, outputs, ansiEditing, commandWraps, remove),
       };
     },
     provide: (field) => [
@@ -585,6 +648,35 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       Prec.lowest((EditorView.outerDecorations ?? EditorView.decorations).from(field, (value) => value.commandScrolls)),
     ],
   });
+  function remove(view: EditorView, commandFrom: number, scope: 'block' | 'output'): void {
+    const state = view.state;
+    const { blocks, livePreview } = state.field(field);
+    const command = blocks.find((block) => block.from === commandFrom && block.terminal);
+    const output = command?.terminal?.output;
+    const first = scope === 'output' ? output : command;
+    const last = output ?? first;
+    if (!livePreview || state.readOnly || !first || !last || first.unclosed || last.unclosed) {
+      new Notice('Motto Code Block: This terminal block is no longer available for deletion.');
+      return;
+    }
+    let from = first.from;
+    const followingLine = last.endLine + 2;
+    const next = followingLine <= state.doc.lines ? state.doc.line(followingLine) : undefined;
+    const to = next?.from ?? state.doc.length;
+    if (!next && from > 0) from--;
+    let insert = '';
+    if (next && blocks.some((block) => block.from === next.from && block.commandFrom === undefined)) {
+      const joined = state.doc.sliceString(0, from) + state.doc.sliceString(to);
+      const following = parseCodeBlocks(joined, getSettings()).blocks.find((block) => block.from === from);
+      // Do not turn a previously unrelated fence into the preceding command's output.
+      if (following?.commandFrom !== undefined) {
+        const quotePrefix = /^[ \t]*(?:>[ \t]*)+/.exec(next.text)?.[0].trimEnd() ?? '';
+        insert = quotePrefix + state.lineBreak;
+      }
+    }
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from }, userEvent: 'motto.delete-block' });
+    view.focus();
+  }
   return {
     extension: [
       field,
@@ -609,7 +701,21 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       }])),
       ViewPlugin.define((view) => {
         views.add(view);
-        return { destroy: () => { views.delete(view); } };
+        const place = () => {
+          if (view.state.field(field).livePreview) measureDeleteButtonPlacement(view);
+        };
+        view.scrollDOM.addEventListener('scroll', place, { passive: true });
+        place();
+        return {
+          update(update) {
+            if (update.geometryChanged || update.viewportChanged || update.docChanged ||
+                update.startState.field(field).decorations !== update.state.field(field).decorations) place();
+          },
+          destroy() {
+            view.scrollDOM.removeEventListener('scroll', place);
+            views.delete(view);
+          },
+        };
       }),
     ],
     refresh: () => {

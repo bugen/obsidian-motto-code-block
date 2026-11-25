@@ -92,6 +92,95 @@ describe('live preview headers', () => {
     expect(view.state.doc.toString()).toBe(doc.slice(0, closing) + 'pwd\n' + doc.slice(closing));
   });
 
+  it.each([0, 1, 2])('deletes only the selected command fence and its output (session position %s)', (position) => {
+    const groups = [
+      '```bash cmd\npwd\n```\n```ansi\n/work\n```  ',
+      '```bash cmd\nprintf \\\n  hello\necho done\n```\n```plaintext expand\nhello\ndone\n```',
+      '```bash cmd\npwd\n```\n```ansi\n/work\n```',
+    ];
+    const { view } = fixture(true, groups.join('\n'));
+    const buttons = [...view.dom.querySelectorAll<HTMLButtonElement>('[aria-label="Delete command block and its output"]')];
+    expect(buttons).toHaveLength(3);
+    const button = buttons[position]!;
+    expect(button.parentElement?.matches('.motto-command-line')).toBe(true);
+    expect(button.closest('.motto-command-tools')).toBeNull();
+    button.click();
+    expect(view.state.doc.toString()).toBe(groups.filter((_, index) => index !== position).join('\n'));
+    expect(view.dom.querySelectorAll('[aria-label="Delete command block and its output"]')).toHaveLength(2);
+  });
+
+  it('deletes only the output beside its pencil and does not pair an unrelated following fence', () => {
+    const command = '```bash cmd\nls\n```';
+    const paired = '```ansi expand\nfile\n```';
+    const unrelated = '```plaintext\nstandalone\n```';
+    const { view } = fixture(true, ['Intro', '', command, paired, unrelated, '', 'Tail'].join('\n'));
+    const pencil = view.dom.querySelector<HTMLButtonElement>('.motto-output-tools [aria-label="Edit source"]')!;
+    const button = pencil.nextElementSibling;
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+    expect(button?.getAttribute('aria-label')).toBe('Delete output only');
+    if (!(button instanceof HTMLButtonElement)) throw new Error('Missing output deletion button');
+    button.click();
+    expect(view.state.doc.toString()).toBe(['Intro', '', command, '', unrelated, '', 'Tail'].join('\n'));
+    expect(view.dom.querySelector('.motto-output-toggle, .motto-command-output')).toBeNull();
+  });
+
+  it.each([
+    ['```bash cmd\n```', '.motto-command-start'],
+    ['```bash cmd fold\npwd\n```\n```ansi\n/work\n```', '.motto-command-header'],
+  ])('allows removing an empty or folded command block', (doc, anchor) => {
+    const { view } = fixture(true, `Intro\n\n${doc}\n\nTail\n`);
+    const button = view.dom.querySelector<HTMLButtonElement>(`${anchor} [aria-label="Delete command block and its output"]`)!;
+    button.click();
+    expect(view.state.doc.toString()).toBe('Intro\n\n\nTail\n');
+  });
+
+  it('does not offer deletion for unclosed fences or in source mode', () => {
+    const unfinished = fixture(true, '```bash cmd\nls\n```\n```ansi expand\nincomplete');
+    expect(unfinished.view.dom.querySelector('.motto-command-output')).not.toBeNull();
+    expect(unfinished.view.dom.querySelector('.motto-terminal-delete')).toBeNull();
+    const sourceMode = fixture(false, '```bash cmd\nls\n```\n```ansi expand\nfile\n```');
+    expect(sourceMode.view.dom.querySelector('.motto-terminal-delete')).toBeNull();
+  });
+
+  it('places the command deletion button outside the row only when it fits inside the pane', async () => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
+    document.head.append(style);
+    try {
+      const { view } = fixture(true, '```bash cmd\npwd\nls\n```');
+      const sourceView = document.createElement('div');
+      sourceView.className = 'markdown-source-view mod-cm6';
+      view.dom.before(sourceView);
+      sourceView.append(view.dom);
+      const [first, second] = [...view.contentDOM.querySelectorAll('.motto-command-line')];
+      const button = first!.querySelector('button.motto-terminal-delete')!;
+      let paneWidth = 540;
+      const clientWidth = (element: HTMLElement, width: () => number) => {
+        Object.defineProperty(element, 'clientWidth', { configurable: true, get: width });
+      };
+      clientWidth(view.scrollDOM, () => paneWidth);
+      clientWidth(document.documentElement, () => 1000);
+      vi.spyOn(view.scrollDOM, 'getBoundingClientRect').mockImplementation(() => new DOMRect(100, 50, paneWidth, 300));
+      vi.spyOn(first!, 'getBoundingClientRect').mockReturnValue(new DOMRect(140, 80, 460, 28));
+      const measure = () => { view.scrollDOM.dispatchEvent(new Event('scroll')); };
+      measure();
+      await vi.waitFor(() => {
+        expect(getComputedStyle(button).insetInlineStart).toBe('100%');
+      });
+      expect(getComputedStyle(button).position).toBe('absolute');
+      expect(getComputedStyle(first!).paddingInlineStart).toBe(getComputedStyle(second!).paddingInlineStart);
+      expect(getComputedStyle(first!).paddingInlineEnd).toBe(getComputedStyle(second!).paddingInlineEnd);
+      paneWidth = 520;
+      measure();
+      await vi.waitFor(() => {
+        expect(getComputedStyle(button).insetInlineStart).toMatch(/^0(?:px)?$/);
+      });
+    } finally {
+      Reflect.deleteProperty(document.documentElement, 'clientWidth');
+      style.remove();
+    }
+  });
+
   it('reserves inline prompt space only in inline mode and updates the tooltip when metadata changes', () => {
     const doc = '```powershell cmd cwd:"C:/a/very/long/directory" prompt-display:hide\nGet-Location\n```';
     const { view } = fixture(true, doc);

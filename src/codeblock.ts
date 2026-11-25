@@ -27,6 +27,7 @@ export interface CodeBlock {
   title: string;
   hasParameters: boolean;
   exclude?: boolean;
+  unclosed?: true;
   terminal?: TerminalBlock;
   commandFrom?: number;
   headerStyle?: string;
@@ -217,6 +218,7 @@ export function parseCodeBlocks(
       const info = parseInfo(infoNode ? source.slice(base + infoNode.from, base + infoNode.to) : '');
       const startLine = lineAt(starts, base + node.from);
       const endLine = lineAt(starts, base + node.to);
+      const closed = node.getChildren('CodeMark').length > 1;
       if (info.explicitCommand && !info.exclude && isCommandLanguage(info.language)) {
         explicitCommands.add(starts[startLine]!);
       }
@@ -226,11 +228,12 @@ export function parseCodeBlocks(
         to: base + node.to,
         startLine,
         endLine,
-        lineCount: Math.max(0, endLine - startLine - (node.getChildren('CodeMark').length > 1 ? 1 : 0)),
+        lineCount: Math.max(0, endLine - startLine - (closed ? 1 : 0)),
         language: info.language,
         title: info.title,
         hasParameters: info.hasParameters,
         ...(info.exclude ? { exclude: true } : {}),
+        ...(!closed ? { unclosed: true } : {}),
         ...(!info.exclude && info.context && isCommandLanguage(info.language) ? { terminal: { ...info.context } } : {}),
         ...(info.headerStyle !== undefined ? { headerStyle: info.headerStyle } : {}),
         ...(info.fold !== undefined ? { fold: info.fold } : {}),
@@ -243,7 +246,7 @@ export function parseCodeBlocks(
       });
       let next = node.nextSibling;
       while (next?.name === 'QuoteMark') next = next.nextSibling;
-      if (node.getChildren('CodeMark').length > 1 && next?.name === 'FencedCode' &&
+      if (closed && next?.name === 'FencedCode' &&
           lineAt(starts, base + next.from) === endLine + 1) {
         adjacent.add(starts[startLine]!);
       }

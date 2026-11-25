@@ -54,6 +54,21 @@ export function commandCopyButton(document: Document, text: string, label: strin
   return button;
 }
 
+export function terminalDeleteButton(document: Document, label: string, remove: () => void): HTMLButtonElement {
+  const button = createEl(document, 'button');
+  button.className = 'motto-command-button motto-terminal-delete';
+  button.type = 'button';
+  button.contentEditable = 'false';
+  button.setAttribute('aria-label', label);
+  setTooltip(button, label);
+  setIcon(button, 'trash-2');
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (button.isConnected) remove();
+  });
+  return button;
+}
+
 function rawOutputCopyButton(document: Document, text: string): HTMLButtonElement {
   const button = copyButton(document, text, 'Copy raw output (including ANSI escape sequences)');
   button.classList.add('motto-raw-copy');
@@ -156,7 +171,7 @@ async function highlightOutput(code: HTMLElement): Promise<void> {
 }
 
 export function commandOutput(
-  document: Document, text: string, edit?: () => void, language = 'ansi',
+  document: Document, text: string, edit?: () => void, language = 'ansi', remove?: () => void,
 ): HTMLElement {
   const output = createEl(document, 'div');
   output.className = 'motto-ansi-view motto-command-output';
@@ -174,6 +189,7 @@ export function commandOutput(
       edit();
     });
   }
+  if (remove) tools.append(terminalDeleteButton(document, 'Delete output only', remove));
   if (language === 'ansi') {
     output.classList.add('motto-output-has-raw');
     tools.append(rawOutputCopyButton(document, text));
@@ -192,8 +208,9 @@ export function commandOutput(
 
 export function commandOutputPreview(
   document: Document, block: CodeBlock, preview: number | undefined, expand: () => void, edit?: () => void,
+  remove?: () => void,
 ): { element: HTMLElement; destroy: () => void } {
-  const element = commandOutput(document, block.text, edit, block.language);
+  const element = commandOutput(document, block.text, edit, block.language, remove);
   const pre = element.querySelector<HTMLElement>('pre')!;
   const code = pre.querySelector<HTMLElement>('code')!;
   const layout = preview !== undefined ? new ReadingCodeLayout(pre, code, block.lineCount, false, preview) : null;
