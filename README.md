@@ -49,11 +49,19 @@ Standalone `ansi` blocks show the ANSI logo when their header and icons are enab
 
 ## Command palette
 
-Search for **Motto Code Block** in the command palette. These commands apply to the active note in Live Preview and Reading view without editing the note:
+Search for **Motto Code Block** in the command palette. These display commands apply to the active note in Live Preview and Reading view without editing the note:
 
 - **Fold all code blocks** / **Expand all code blocks**: Change only blocks with headers, including Command Block bodies.
 - **Close all command outputs** / **Open all command outputs**: Change paired outputs even when their Command Blocks have no header. Opening also expands the parent Command Blocks and shows the full output.
 - **Reset block folding and output visibility**: Restore the defaults from the fence options and plugin settings.
+
+To paste a terminal session, copy the transcript starting with its first prompt. In Live Preview or Source mode, place the cursor outside existing code blocks and run **Paste terminal output (keep ANSI)** or **Paste terminal output (strip ANSI)**. Both create editable Markdown; the first preserves escape sequences in `ansi` output blocks, and the second writes plain output in `plaintext` blocks.
+
+If automatic detection picks the wrong shell, use **Paste Bash terminal output** (shell prompts ending in `$`, `#`, or `%`) or **Paste PowerShell terminal output** (`>` prompts). Both are available with **keep ANSI** and **strip ANSI**. The detected prompt is saved with each command; hover over its symbol to see the full text.
+
+Under **Command blocks → Terminal prompt patterns**, common Bash, Zsh, and PowerShell patterns are enabled by default. Click **Add pattern** to enter a custom JavaScript regular expression, such as `^dev:[^$]+\$`. Match from the start through the final prompt symbol, but not the following space. Use the switch beside each pattern to enable or disable it. Custom patterns are tried before presets; automatic detection is still used if none match.
+
+Under **Command blocks → Ignored terminal command suffixes**, enter one literal string per line. Paste commands skip matching command entries and their output. The default `^C` skips canceled inputs such as `^C` and `cd ^C`; clear the setting to keep them.
 
 ## Extended syntax
 
@@ -67,6 +75,7 @@ Add options after the language name on the opening code fence. Quote values that
 | `header-style:info` | Color the header using an Obsidian callout type. |
 | `cmd` | Render a fence listed in **Command languages** as a Command Block. |
 | `prompt:"user@host:~/project"` | Show the user, host, and working directory in a Command Block header. |
+| `prompt-text:"(PROD) [user@host ~]$"` | Use the literal prompt, including its final `$`, `#`, `%`, or `>`, instead of reconstructing it from the prompt fields. |
 | `prompt-display:inline` | Show the prompt on the command line instead of in the header. If space is limited, only the part before the prompt symbol is shortened. |
 | `prompt-display:hide` | Show only the prompt symbol on the command line. Hover over the symbol to see the full prompt above it. |
 | `user:`, `host:`, `cwd:` | Set the prompt fields individually. |

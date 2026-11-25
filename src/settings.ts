@@ -41,6 +41,8 @@ export interface MottoSettings {
   commandBlocks: boolean;
   commandLanguages: string[];
   outputLanguages: string[];
+  terminalPromptPatterns: TerminalPromptPattern[];
+  terminalIgnoredCommandSuffixes: string;
   commandSpacing: CommandSpacing;
   tapMyHippo: boolean;
   showIcon: boolean;
@@ -75,6 +77,8 @@ export const DEFAULT_SETTINGS: Readonly<MottoSettings> = {
   commandBlocks: true,
   commandLanguages: [...DEFAULT_COMMAND_LANGUAGES],
   outputLanguages: ['ansi', 'plaintext'],
+  terminalPromptPatterns: DEFAULT_TERMINAL_PROMPT_PATTERNS.map((pattern) => ({ ...pattern })),
+  terminalIgnoredCommandSuffixes: '^C',
   commandSpacing: 'middle',
   tapMyHippo: false,
   showIcon: true,
@@ -123,6 +127,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value);
+}
+
+function parseTerminalPromptPatterns(value: unknown, defaults: TerminalPromptPattern[]): TerminalPromptPattern[] {
+  if (typeof value === 'string') {
+    const migrated = value.split(/\r?\n/).filter((source) => source.trim()).map((source, index) => ({
+      id: `custom-${index + 1}`, source, enabled: true,
+    }));
+    return [...migrated, ...defaults];
+  }
+  if (!Array.isArray(value)) {
+    console.warn('[Motto Code Block] Invalid setting "terminalPromptPatterns"; using defaults.');
+    return defaults;
+  }
+  const patterns: TerminalPromptPattern[] = [];
+  const seen = new Set<string>();
+  for (const [index, pattern] of value.entries()) {
+    if (!isRecord(pattern) || typeof pattern.id !== 'string' || !pattern.id || seen.has(pattern.id) ||
+        typeof pattern.source !== 'string' || typeof pattern.enabled !== 'boolean') {
+      console.warn(`[Motto Code Block] Invalid terminal prompt pattern at position ${index + 1}; skipping it.`);
+      continue;
+    }
+    const name = defaults.find(({ id }) => id === pattern.id)?.name;
+    patterns.push({ id: pattern.id, source: pattern.source, enabled: pattern.enabled, ...(name ? { name } : {}) });
+    seen.add(pattern.id);
+  }
+  return patterns;
 }
 
 function parseOutputToggleStyle(data: unknown, mode: ColorMode): OutputToggleStyleSettings {
@@ -195,6 +225,7 @@ export function parseSettings(data: unknown): MottoSettings {
     languageExcludeList: [...DEFAULT_SETTINGS.languageExcludeList],
     commandLanguages: [...DEFAULT_SETTINGS.commandLanguages],
     outputLanguages: [...DEFAULT_SETTINGS.outputLanguages],
+    terminalPromptPatterns: DEFAULT_SETTINGS.terminalPromptPatterns.map((pattern) => ({ ...pattern })),
     headerStyles: {
       light: { ...DEFAULT_SETTINGS.headerStyles.light },
       dark: { ...DEFAULT_SETTINGS.headerStyles.dark },
@@ -227,6 +258,14 @@ export function parseSettings(data: unknown): MottoSettings {
     const value: unknown = Reflect.get(data, key);
     if (typeof value === 'boolean') settings[key] = value;
     else console.warn(`[Motto Code Block] Invalid setting "${key}"; using its default.`);
+  }
+  if ('terminalPromptPatterns' in data) {
+    settings.terminalPromptPatterns = parseTerminalPromptPatterns(data.terminalPromptPatterns, settings.terminalPromptPatterns);
+  }
+  if ('terminalIgnoredCommandSuffixes' in data) {
+    if (typeof data.terminalIgnoredCommandSuffixes === 'string') {
+      settings.terminalIgnoredCommandSuffixes = data.terminalIgnoredCommandSuffixes;
+    } else console.warn('[Motto Code Block] Invalid setting "terminalIgnoredCommandSuffixes"; using its default.');
   }
   if ('commandSpacing' in data) {
     if (isChoice(data.commandSpacing, COMMAND_SPACING_MODES)) settings.commandSpacing = data.commandSpacing;
@@ -278,4 +317,5 @@ export function parseSettings(data: unknown): MottoSettings {
 }
 import { DEFAULT_COMMAND_LANGUAGES } from './commands';
 import { languages } from './languages';
+import { DEFAULT_TERMINAL_PROMPT_PATTERNS, type TerminalPromptPattern } from './terminal-prompt';
 

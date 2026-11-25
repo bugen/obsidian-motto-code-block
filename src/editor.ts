@@ -53,6 +53,7 @@ class HeaderWidget extends WidgetType {
       this.block.terminal?.user === other.block.terminal?.user &&
       this.block.terminal?.host === other.block.terminal?.host &&
       this.block.terminal?.cwd === other.block.terminal?.cwd &&
+      this.block.terminal?.promptText === other.block.terminal?.promptText &&
       this.block.terminal?.promptDisplay === other.block.terminal?.promptDisplay &&
       Boolean(this.block.terminal) === Boolean(other.block.terminal) &&
       this.settings.commandBlocks === other.settings.commandBlocks &&

@@ -130,7 +130,7 @@ export function createHeader(
     title.textContent = block.title;
     title.title = block.title;
   }
-  if (terminal && terminal.promptDisplay === undefined && (terminal.user || terminal.host || terminal.cwd)) {
+  if (terminal && terminal.promptDisplay === undefined && (terminal.promptText || terminal.user || terminal.host || terminal.cwd)) {
     const context = header.createSpan();
     context.className = 'motto-command-context';
     const append = (key: 'user' | 'host' | 'cwd') => {
@@ -141,11 +141,17 @@ export function createHeader(
       field.textContent = value;
       field.title = value;
     };
-    append('user');
-    if (terminal.user && terminal.host) context.append('@');
-    append('host');
-    if ((terminal.user || terminal.host) && terminal.cwd) context.append(':');
-    append('cwd');
+    if (terminal.promptText) {
+      const field = context.createSpan();
+      field.className = 'motto-command-prompt-context';
+      field.textContent = terminal.promptText;
+    } else {
+      append('user');
+      if (terminal.user && terminal.host) context.append('@');
+      append('host');
+      if ((terminal.user || terminal.host) && terminal.cwd) context.append(':');
+      append('cwd');
+    }
     context.title = context.textContent;
   }
   if (block.headerStyle) {

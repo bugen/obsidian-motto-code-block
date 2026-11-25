@@ -4,6 +4,7 @@ import type { NoteFoldAction } from './folding';
 import { ReadingHeaders } from './reading';
 import { parseSettings, type MottoSettings } from './settings';
 import { MottoSettingsTab } from './settings-tab';
+import { pasteTerminalTranscript } from './terminal-paste';
 
 const noteFoldCommands: Record<NoteFoldAction, string> = {
   'fold-blocks': 'Fold all code blocks',
@@ -12,6 +13,8 @@ const noteFoldCommands: Record<NoteFoldAction, string> = {
   'open-outputs': 'Open all command outputs',
   'reset-folds': 'Reset block folding and output visibility',
 };
+
+const terminalPasteShells = { auto: '', bash: 'Bash ', powershell: 'PowerShell ' } as const;
 
 export default class MottoCodeBlockPlugin extends Plugin {
   override settings: MottoSettings = parseSettings(null);
@@ -86,6 +89,29 @@ export default class MottoCodeBlockPlugin extends Plugin {
           return this.editorHeaders?.setNoteFolds(view.editor, action, checking) ?? false;
         },
       });
+    }
+    for (const shell of ['auto', 'bash', 'powershell'] as const) {
+      for (const ansi of ['keep', 'strip'] as const) {
+        this.addCommand({
+          id: `paste-${shell === 'auto' ? '' : `${shell}-`}terminal-output-${ansi}-ansi`,
+          name: `Paste ${terminalPasteShells[shell]}terminal output (${ansi} ANSI)`,
+          editorCheckCallback: (checking, editor, view) => {
+            if (!(view instanceof MarkdownView) || !view.file || view.getMode() !== 'source') return false;
+            if (!checking) {
+              const file = view.file;
+              const readClipboard = async () => {
+                const clipboard = view.containerEl.ownerDocument.defaultView?.navigator.clipboard;
+                if (!clipboard) throw new Error('Clipboard API is unavailable.');
+                return clipboard.readText();
+              };
+              const isCurrent = () => this.app.workspace.getActiveViewOfType(MarkdownView) === view &&
+                view.file === file && view.getMode() === 'source';
+              void pasteTerminalTranscript(editor, readClipboard, isCurrent, this.settings, ansi === 'keep', shell);
+            }
+            return true;
+          },
+        });
+      }
     }
     this.addSettingTab(new MottoSettingsTab(this.app, this));
   }

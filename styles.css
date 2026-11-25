@@ -70,6 +70,17 @@
   box-shadow: 0 1px 3px rgb(0 0 0 / 15%);
 }
 
+.motto-settings .motto-prompt-pattern .setting-item-control {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+
+.motto-settings .motto-prompt-pattern input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-monospace);
+}
+
 @media (max-width: 600px) {
   .motto-settings .setting-item:not(.setting-item-heading, .mod-heading) {
     flex-wrap: wrap;

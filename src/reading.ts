@@ -407,7 +407,7 @@ export class ReadingHeaders {
     mount.foldState = resolveFoldState(mount.block, settings, mount.foldOverride);
     const prompt = this.sessionFor(mount)?.prompt;
     const terminal = mount.block.terminal;
-    const showPromptHeader = prompt === 'header' && Boolean(terminal?.user || terminal?.host || terminal?.cwd);
+    const showPromptHeader = prompt === 'header' && Boolean(terminal?.promptText || terminal?.user || terminal?.host || terminal?.cwd);
     mount.header = createHeader(pre.ownerDocument, this.displayBlock(mount), showPromptHeader
       ? { ...settings, headerDisplay: 'always' } : settings, hasFoldableHeader(mount.block, settings) ? {
       state: mount.foldState,

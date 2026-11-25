@@ -4,6 +4,18 @@ import { DEFAULT_SETTINGS, isLanguageEnabled, OUTPUT_TOGGLE_ICONS, parseSettings
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('saved settings', () => {
+  it('migrates ordered prompt patterns and preserves each enabled state on reload', () => {
+    const settings = parseSettings({ terminalPromptPatterns: '^first\\$\r\n\r\n^second\\$' });
+    expect(settings.terminalPromptPatterns.slice(0, 2).map(({ source, enabled }) => [source, enabled])).toEqual([
+      ['^first\\$', true], ['^second\\$', true],
+    ]);
+    expect(settings.terminalPromptPatterns.slice(2)).toEqual(parseSettings(null).terminalPromptPatterns);
+    settings.terminalPromptPatterns[1]!.enabled = false;
+    settings.terminalPromptPatterns.find(({ id }) => id === 'zsh-macos')!.enabled = false;
+    expect(parseSettings(JSON.parse(JSON.stringify(settings))).terminalPromptPatterns).toEqual(settings.terminalPromptPatterns);
+    expect(parseSettings(null).terminalPromptPatterns.find(({ id }) => id === 'zsh-macos')?.enabled).toBe(true);
+  });
+
   it('normalizes and preserves command languages independently of other lists', () => {
     const defaults = parseSettings({});
     expect(defaults.commandLanguages).toEqual(['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell']);

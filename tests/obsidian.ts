@@ -198,17 +198,17 @@ class TextAreaControl {
 }
 
 class ToggleControl {
-  private readonly inputEl: HTMLInputElement;
+  readonly toggleEl: HTMLInputElement;
 
   constructor(parent: HTMLElement) {
-    this.inputEl = document.createElement('input');
-    this.inputEl.type = 'checkbox';
-    parent.append(this.inputEl);
+    this.toggleEl = document.createElement('input');
+    this.toggleEl.type = 'checkbox';
+    parent.append(this.toggleEl);
   }
 
-  setValue(value: boolean): this { this.inputEl.checked = value; return this; }
+  setValue(value: boolean): this { this.toggleEl.checked = value; return this; }
   onChange(callback: (value: boolean) => unknown): this {
-    this.inputEl.addEventListener('change', () => { void callback(this.inputEl.checked); });
+    this.toggleEl.addEventListener('change', () => { void callback(this.toggleEl.checked); });
     return this;
   }
 }

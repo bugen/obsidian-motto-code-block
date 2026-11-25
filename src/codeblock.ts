@@ -5,6 +5,7 @@ export interface TerminalContext {
   user?: string;
   host?: string;
   cwd?: string;
+  promptText?: string;
   promptDisplay?: 'inline' | 'hide';
 }
 
@@ -37,7 +38,7 @@ export interface CodeBlock {
 const foldOptions = new Map([['fold', true], ['expand', false], ['unfold', false]]);
 const valueOptions = new Map([
   ['title', 'title'], ['file', 'file'], ['header-style', 'header-style'], ['prompt', 'prompt'],
-  ['prompt-display', 'prompt-display'],
+  ['prompt-display', 'prompt-display'], ['prompt-text', 'prompt-text'],
   ['user', 'user'], ['host', 'host'], ['cwd', 'cwd'],
   ['directory', 'cwd'], ['dir', 'cwd'], ['wd', 'cwd'], ['pwd', 'cwd'],
 ]);
@@ -75,7 +76,8 @@ export function parseInfo(info: string): {
     while (index < options.length && /\s/.test(options[index]!)) index++;
     const hasValue = options[index] === ':' || options[index] === '=';
     const valueKey = valueOptions.get(key);
-    if (hasValue && (valueKey === 'prompt' || valueKey === 'user' || valueKey === 'host' || valueKey === 'cwd')) {
+    if (hasValue && (valueKey === 'prompt' || valueKey === 'prompt-text' ||
+      valueKey === 'user' || valueKey === 'host' || valueKey === 'cwd')) {
       hasPromptParameters = true;
     } else if (foldOptions.has(key) || (hasValue && valueKey !== undefined && valueKey !== 'prompt-display')) {
       hasParameters = true;
@@ -140,6 +142,11 @@ export function parseInfo(info: string): {
       if (parts[2] !== undefined) context.host = parts[2];
       if (parts[3] !== undefined) context.cwd = parts[3];
     } else diagnostics.push('Invalid "prompt" option. Use "user", "user@host", or "user@host:cwd".');
+  }
+  const promptText = values.get('prompt-text');
+  if (promptText !== undefined) {
+    if (/[$#>%]$/.test(promptText)) context.promptText = promptText;
+    else diagnostics.push('Invalid "prompt-text" option. End the prompt with "$", "#", ">", or "%".');
   }
   const promptDisplay = values.get('prompt-display')?.toLowerCase();
   if (promptDisplay === 'inline' || promptDisplay === 'hide') context.promptDisplay = promptDisplay;

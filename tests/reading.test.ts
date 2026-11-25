@@ -316,6 +316,25 @@ describe('reading mode headers', () => {
     expect(shell.section.querySelector('.motto-command-wrap')).not.toBeNull();
   });
 
+  it('displays a literal transcript prompt in the tooltip, header and inline', async () => {
+    const prompt = '(PROD) [dev@node-01 ~]#';
+    const source = `\`\`\`bash cmd prompt-text:"${prompt}" prompt-display:hide\npwd\n\`\`\`\n\`\`\`bash cmd\nls\n\`\`\``;
+    const { renderer, context } = fixture(source);
+    const shell = block('pwd', 'bash');
+    await renderer.process(shell.section, context);
+
+    expect(shell.section.querySelector('.motto-command-prompt')?.textContent).toBe('#');
+    expect(shell.section.querySelector('.motto-command-prompt-symbol')?.getAttribute('aria-label')).toBe(prompt);
+    const select = (title: string) => {
+      shell.section.querySelector<HTMLButtonElement>('.motto-session-menu')!.click();
+      Menu.active!.choose(title);
+    };
+    select('Prompt: Header');
+    expect(shell.section.querySelector('.motto-command-context')?.textContent).toBe(prompt);
+    select('Prompt: Inline');
+    expect(shell.section.querySelector('.motto-command-prompt')?.textContent).toBe(prompt);
+  });
+
   it.each(['header', 'output'])('keeps the reading scroll position when the %s changes the preview height', async (control) => {
     vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
     const shell = control === 'output';

@@ -2,9 +2,7 @@ import Anser from 'anser';
 import ansiRegex from 'ansi-regex';
 import { createFragment } from './dom';
 
-export function ansiText(text: string): string {
-  return text.replace(ansiRegex(), '');
-}
+export { ansiText } from './ansi-text';
 
 function ansiColor(color: string, trueColor: string): string {
   if (color === 'ansi-truecolor') return `rgb(${trueColor})`;

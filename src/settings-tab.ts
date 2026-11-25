@@ -4,6 +4,7 @@ import {
 } from 'obsidian';
 import type MottoCodeBlockPlugin from './main';
 import { createEl } from './dom';
+import { compilePromptPatterns, type TerminalPromptPattern } from './terminal-prompt';
 import {
   COLOR_MODES, COMMAND_SPACING_MODES, DEFAULT_SETTINGS, FOLD_STATES, HEADER_BACKGROUNDS, HEADER_DISPLAY_MODES,
   ICON_SIZES, LANGUAGE_LABEL_STYLES, LINE_NUMBER_MODES, OUTPUT_TOGGLE_ICONS,
@@ -61,7 +62,9 @@ export class MottoSettingsTab extends PluginSettingTab {
       {
         type: 'group', heading: 'Command blocks', cls: 'motto-settings-section motto-settings-level-2',
         items: [
-          this.customSettings('Command blocks', ['Command languages', 'Command spacing'], (parent) => this.addCommands(parent)),
+          this.customSettings('Command blocks', [
+            'Command languages', 'Command spacing', 'Terminal prompt patterns', 'Ignored terminal command suffixes',
+          ], (parent) => this.addCommands(parent)),
           this.customSettings('Output', [
             'Output languages', 'Output toggle icon', 'Reverse output toggle icons',
             'Override output toggle color', 'Output toggle color', 'Tap my hip-po!',
@@ -188,6 +191,101 @@ export class MottoSettingsTab extends PluginSettingTab {
     this.addChoice(commands, 'commandSpacing', 'Command spacing',
       'Vertical spacing between commands in the same block. Small keeps the original spacing; Middle is the default. Continued lines are unchanged.',
       COMMAND_SPACING_MODES, { small: 'Small', middle: 'Middle', large: 'Large' }, noCommands);
+    this.addTerminalPromptPatterns(commands);
+    this.addIgnoredTerminalCommandSuffixes(commands);
+  }
+
+  private addTerminalPromptPatterns(parent: HTMLElement): void {
+    const heading = this.createSetting(parent, 'Terminal prompt patterns').setDesc(
+      'Used when pasting terminal output. Enter a JavaScript regular expression without / delimiters. Match from the start through the final $, #, % or >, excluding the following space. Custom patterns are tried before presets. Automatic detection still runs if no enabled pattern matches.');
+    const list = parent.createDiv();
+    const renderPattern = (pattern: TerminalPromptPattern) => {
+      const label = pattern.name ?? `Custom pattern ${pattern.id.replace(/^custom-/, '')}`;
+      const row = new Setting(list).setName(label);
+      row.settingEl.classList.add('motto-prompt-pattern');
+      const update = (patch: Partial<Pick<TerminalPromptPattern, 'source' | 'enabled'>>) => this.save((settings) => ({
+        ...settings, terminalPromptPatterns: settings.terminalPromptPatterns.map((entry) =>
+          entry.id === pattern.id ? { ...entry, ...patch } : entry),
+      }));
+      row.addText((text) => {
+        text.setValue(pattern.source);
+        text.inputEl.readOnly = Boolean(pattern.name);
+        text.inputEl.spellcheck = false;
+        text.inputEl.setAttribute('aria-label', `${label} regular expression`);
+        text.inputEl.addEventListener('change', () => {
+          const source = text.getValue();
+          const { invalid } = compilePromptPatterns([source]);
+          if (invalid.length) {
+            text.inputEl.setAttribute('aria-invalid', 'true');
+            new Notice('Motto Code Block: Invalid terminal prompt pattern. The saved pattern was not changed.');
+            return;
+          }
+          text.inputEl.removeAttribute('aria-invalid');
+          void update({ source });
+        });
+      });
+      row.addToggle((toggle) => {
+        toggle.toggleEl.setAttribute('aria-label', `Enable ${label}`);
+        toggle.setValue(pattern.enabled).onChange((enabled) => update({ enabled }));
+      });
+      if (!pattern.name) {
+        const firstPreset = list.querySelector('.motto-prompt-preset');
+        if (firstPreset) list.insertBefore(row.settingEl, firstPreset);
+        row.addExtraButton((button) => {
+          button.setIcon('trash-2').setTooltip(`Remove ${label}`).onClick(() => this.save((settings) => ({
+            ...settings, terminalPromptPatterns: settings.terminalPromptPatterns.filter(({ id }) => id !== pattern.id),
+          }), () => {
+            if (row.settingEl.contains(row.settingEl.ownerDocument.activeElement)) {
+              heading.controlEl.querySelector('button')?.focus();
+            }
+            row.settingEl.remove();
+          }));
+        });
+      } else {
+        row.settingEl.classList.add('motto-prompt-preset');
+      }
+      return row.settingEl.querySelector<HTMLInputElement>('input[type="text"]');
+    };
+    for (const pattern of this.motto.settings.terminalPromptPatterns) renderPattern(pattern);
+    heading.addButton((button) => {
+      button.setButtonText('Add pattern').onClick(() => {
+        let added: TerminalPromptPattern;
+        return this.save((settings) => {
+          const ids = new Set(settings.terminalPromptPatterns.map(({ id }) => id));
+          let number = 1;
+          while (ids.has(`custom-${number}`)) number++;
+          added = { id: `custom-${number}`, source: '', enabled: true };
+          const patterns = [...settings.terminalPromptPatterns];
+          const preset = patterns.findIndex(({ name }) => name);
+          patterns.splice(preset === -1 ? patterns.length : preset, 0, added);
+          return { ...settings, terminalPromptPatterns: patterns };
+        }, () => {
+          if (this.containerEl.contains(list)) renderPattern(added)?.focus();
+        });
+      });
+    });
+  }
+
+  private addIgnoredTerminalCommandSuffixes(parent: HTMLElement): void {
+    const name = 'Ignored terminal command suffixes';
+    const setting = this.createSetting(parent, name).setDesc(
+      'When pasting terminal output, skip commands ending in any of these literal strings and omit their associated output. Enter one per line. Default: ^C (Ctrl-C). Leave empty to keep all commands.');
+    setting.controlEl.classList.add('motto-language-list-control');
+    const key = 'terminalIgnoredCommandSuffixes';
+    setting.addTextArea((text) => {
+      text.inputEl.rows = 3;
+      text.inputEl.cols = 36;
+      text.inputEl.setAttribute('aria-label', name);
+      text.setValue(this.motto.settings[key]);
+      text.inputEl.addEventListener('change', () => {
+        const value = text.getValue();
+        void this.save((settings) => ({ ...settings, [key]: value }));
+      });
+      setting.addExtraButton(this.resetButton(() => this.save(
+        (settings) => ({ ...settings, [key]: DEFAULT_SETTINGS[key] }),
+        () => { text.setValue(this.motto.settings[key]); },
+      ), () => this.motto.settings[key] !== DEFAULT_SETTINGS[key]));
+    });
   }
 
   private addOutput(commands: HTMLElement): void {

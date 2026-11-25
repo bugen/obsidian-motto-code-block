@@ -466,6 +466,58 @@ describe('settings tab', () => {
     });
   });
 
+  it.each([false, true])('adds, edits, toggles and removes individual prompt patterns (declarative=%s)', async (declarative) => {
+    const { plugin, row, saved } = fixture(declarative);
+    const add = row('Terminal prompt patterns').querySelector('button')!;
+    const zsh = row('Zsh: host%');
+    expect(zsh.querySelector<HTMLInputElement>('input[type="text"]')?.readOnly).toBe(true);
+    zsh.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+
+    add.click();
+    const label = 'Custom pattern 1';
+    await vi.waitFor(() => { expect(row(label)).toBeDefined(); });
+    const input = row(label).querySelector<HTMLInputElement>('input[type="text"]')!;
+    expect(document.activeElement).toBe(input);
+    const source = '^DEV:[A-Z,]+\\$';
+    input.value = source;
+    input.dispatchEvent(new Event('change'));
+    row(label).querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    await vi.waitFor(() => {
+      const patterns = saved[saved.length - 1]?.terminalPromptPatterns;
+      expect(patterns?.[0]).toMatchObject({ source, enabled: false });
+      expect(patterns?.find(({ id }) => id === 'zsh-host')?.enabled).toBe(false);
+    });
+
+    input.value = '(';
+    input.dispatchEvent(new Event('change'));
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(plugin.settings.terminalPromptPatterns[0]?.source).toBe(source);
+
+    add.click();
+    await vi.waitFor(() => { expect(row('Custom pattern 2')).toBeDefined(); });
+    row(label).querySelector<HTMLButtonElement>(`button[aria-label="Remove ${label}"]`)!.click();
+    await vi.waitFor(() => {
+      expect(input.isConnected).toBe(false);
+      expect(saved[saved.length - 1]?.terminalPromptPatterns[0]?.id).toBe('custom-2');
+    });
+  });
+
+  it('persists ignored terminal command suffixes and can clear or reset them', async () => {
+    const { plugin, row, change, reset } = fixture();
+    const name = 'Ignored terminal command suffixes';
+    const field = row(name).querySelector('textarea');
+    expect(field?.value).toBe('^C');
+    change(name, '^C\n[skip]');
+    await vi.waitFor(() => { expect(plugin.settings.terminalIgnoredCommandSuffixes).toBe('^C\n[skip]'); });
+    change(name, '');
+    await vi.waitFor(() => { expect(plugin.settings.terminalIgnoredCommandSuffixes).toBe(''); });
+    reset(name);
+    await vi.waitFor(() => {
+      expect(plugin.settings.terminalIgnoredCommandSuffixes).toBe('^C');
+      expect(field?.value).toBe('^C');
+    });
+  });
+
   it('persists command spacing and resets to Middle without changing other settings', async () => {
     const { plugin, tab, saved, row, change, reset } = fixture();
     plugin.settings = parseSettings({ showHeaderCopyButton: true });

@@ -9,9 +9,10 @@ export interface CommandPrompt {
 }
 
 export function formatCommandPrompt(language: string, terminal?: TerminalContext): CommandPrompt {
-  const symbol = language === 'powershell' ? '>' : terminal?.user === 'root' ? '#' : '$';
+  const text = terminal?.promptText;
+  const symbol = text?.slice(-1) || (language === 'powershell' ? '>' : terminal?.user === 'root' ? '#' : '$');
   const identity = [terminal?.user, terminal?.host].filter(Boolean).join('@');
-  const context = [identity, terminal?.cwd].filter(Boolean).join(':');
+  const context = text ? text.slice(0, -1) : [identity, terminal?.cwd].filter(Boolean).join(':');
   return {
     symbol,
     inlineContext: terminal?.promptDisplay === 'inline' ? context : '',
@@ -26,9 +27,13 @@ export interface CommandRange {
   endLine: number;
 }
 
+export function continuesCommand(line: string, language: string): boolean {
+  const suffix = language === 'powershell' ? /`+$/ : /\\+$/;
+  return (line.match(suffix)?.[0].length ?? 0) % 2 === 1;
+}
+
 export function splitCommands(text: string, language: string): CommandRange[] {
   const commands: CommandRange[] = [];
-  const continuation = language === 'powershell' ? /`+$/ : /\\+$/;
   let offset = 0;
   let from = 0;
   let startLine = 0;
@@ -39,7 +44,7 @@ export function splitCommands(text: string, language: string): CommandRange[] {
       startLine = lineNumber;
     }
     const to = offset + line.length;
-    continued = (line.match(continuation)?.[0].length ?? 0) % 2 === 1;
+    continued = continuesCommand(line, language);
     if ((!continued || to === text.length) && text.slice(from, to).trim()) {
       commands.push({ from, to, startLine, endLine: lineNumber });
     }
