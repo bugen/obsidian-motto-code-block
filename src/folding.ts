@@ -7,6 +7,7 @@ export interface OutputState {
 }
 
 export type NoteFoldAction = 'fold-blocks' | 'expand-blocks' | 'close-outputs' | 'open-outputs' | 'reset-folds';
+type OutputVisibilityAction = Extract<NoteFoldAction, 'close-outputs' | 'open-outputs'>;
 
 export function hasFoldableHeader(block: CodeBlock, settings: MottoSettings): boolean {
   return !(settings.commandBlocks && block.commandFrom !== undefined) &&
@@ -21,6 +22,8 @@ export function noteFoldOverride(block: CodeBlock, settings: MottoSettings, acti
   }
 }
 
+export function noteOutputOverride(action: OutputVisibilityAction): OutputState;
+export function noteOutputOverride(action: NoteFoldAction): OutputState | undefined;
 export function noteOutputOverride(action: NoteFoldAction): OutputState | undefined {
   if (action === 'open-outputs') return { open: true, fullyExpanded: true };
   if (action === 'close-outputs') return { open: false, fullyExpanded: false };

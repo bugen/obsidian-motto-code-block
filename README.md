@@ -41,6 +41,8 @@ Click a command's prompt to toggle line wrapping for that command, including any
 
 In Reading view, consecutive `cmd` blocks with no blank lines between them are displayed as one compact terminal session. Live Preview keeps them separate for editing. Each output still opens and closes independently. Insert a blank line after a command and its output to start a new session.
 
+Use the two-line menu icon beside the first command to open or close all outputs in that session, restore their fence defaults, switch prompt display, or copy all commands without prompts or output. When space is tight, the icon appears next to the command controls without the round background. These actions do not edit the note.
+
 ![Command Block with shell commands and output](./screenshots/command_block_lvs.png)
 
 Standalone `ansi` blocks show the ANSI logo when their header and icons are enabled. In any `ansi` preview, the copy icon copies plain text; **RAW** copies the full text with ANSI escape sequences.

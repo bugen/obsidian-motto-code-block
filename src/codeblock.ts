@@ -13,6 +13,7 @@ export type CommandSessionPosition = 'first' | 'middle' | 'last';
 export interface TerminalBlock extends TerminalContext {
   output?: CodeBlock;
   session?: CommandSessionPosition;
+  sessionFrom?: number;
 }
 
 export interface CodeBlock {
@@ -259,7 +260,9 @@ export function parseCodeBlocks(
     if (!next?.terminal || !explicitCommands.has(next.from) ||
         !adjacent.has(command.terminal.output?.from ?? command.from)) continue;
     command.terminal.session = command.terminal.session === 'last' ? 'middle' : 'first';
+    command.terminal.sessionFrom ??= command.from;
     next.terminal.session = 'last';
+    next.terminal.sessionFrom = command.terminal.sessionFrom;
   }
   const diagnostics = blocks.flatMap((block) =>
     isCodeBlockEnabled(block, settings)

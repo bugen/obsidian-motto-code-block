@@ -1,25 +1,38 @@
 import { MarkdownRenderChild, type MarkdownPostProcessorContext } from 'obsidian';
 import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
-import { createExpandFooter, createHeader, setHeaderFoldState } from './render';
+import { copyCode, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import type { FoldState, MottoSettings } from './settings';
-import { initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
+import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { ReadingCommandView, ReadingOutputView } from './command-reading';
 import { ansiPreview } from './command-render';
+import { splitCommands } from './commands';
+import { ReadingSessionMenu, type SessionOutputAction, type SessionPromptMode } from './session-menu';
+
+interface SessionState {
+  outputAction?: SessionOutputAction;
+  expandOutputOwners?: boolean;
+  prompt?: SessionPromptMode;
+}
+
+interface ReadingDocument {
+  path: string;
+  source: string;
+  sessions: Map<number, SessionState>;
+}
 
 interface Mount {
   child: MarkdownRenderChild;
   header: HTMLElement | null;
   block: CodeBlock;
-  docId: string;
-  sourcePath: string;
-  source: string;
+  document: ReadingDocument;
   foldState: FoldState;
   foldOverride: FoldState | undefined;
   expandFooter: HTMLDivElement | null;
   layout: { destroy(): void } | null;
   outputState: OutputState | undefined;
   wrappedCommands: Set<number>;
+  sessionMenu?: ReadingSessionMenu;
 }
 
 interface NoteFolds {
@@ -31,6 +44,7 @@ interface NoteFolds {
 
 export class ReadingHeaders {
   private readonly mounts = new Map<HTMLElement, Mount>();
+  private readonly documents = new WeakMap<Document | HTMLElement, Map<string, ReadingDocument>>();
   private readonly noteFolds = new WeakMap<HTMLElement, NoteFolds>();
   private readonly pendingScroll = new WeakMap<HTMLElement, AbortController>();
   private readonly readSource: (path: string) => Promise<string | undefined>;
@@ -58,15 +72,18 @@ export class ReadingHeaders {
     const settings = this.getSettings();
     const result = parseCodeBlocks(source, settings);
     reportDiagnostics(result.diagnostics, context.sourcePath);
-    const used = new Set<number>();
-    for (const mount of this.mounts.values()) {
-      if (mount.docId === context.docId && mount.sourcePath === context.sourcePath && mount.source === source) {
-        used.add(mount.block.from);
-      }
-    }
+    const usedByDocument = new Map<ReadingDocument, Set<number>>();
     for (const pre of pres) {
+      const scope = pre.closest<HTMLElement>('.markdown-preview-view, .markdown-embed') ?? pre.ownerDocument;
+      const document = this.documentFor(scope, context, source);
+      let used = usedByDocument.get(document);
+      if (!used) {
+        used = new Set([...this.mounts.values()].filter((mount) => mount.document === document)
+          .map((mount) => mount.block.from));
+        usedByDocument.set(document, used);
+      }
       const existing = this.mounts.get(pre);
-      if (existing) used.delete(existing.block.from);
+      if (existing?.document === document) used.delete(existing.block.from);
       const code = pre.querySelector<HTMLElement>(':scope > code')!;
       const section = context.getSectionInfo(code);
       if (!section) {
@@ -83,27 +100,33 @@ export class ReadingHeaders {
       }
       used.add(block.from);
       if (existing) {
+        if (existing.document !== document) {
+          existing.sessionMenu?.destroy();
+          delete existing.sessionMenu;
+        }
         this.updateBlock(existing, block);
-        existing.source = source;
-        existing.sourcePath = context.sourcePath;
-        existing.docId = context.docId;
+        existing.document = document;
         this.render(pre, existing);
         continue;
       }
       const child = new MarkdownRenderChild(pre);
       const mount: Mount = {
-        child, header: null, block, docId: context.docId, sourcePath: context.sourcePath, source,
+        child, header: null, block, document,
         foldState: 'expanded', foldOverride: undefined, expandFooter: null, layout: null, outputState: undefined,
         wrappedCommands: new Set(),
       };
       const folds = this.foldsFor(pre, context.sourcePath);
-      if (folds) {
-        const action = folds.expandOutputOwners && block.terminal?.output ? 'open-outputs' : folds.bodyAction;
-        if (action) mount.foldOverride = noteFoldOverride(block, settings, action);
-        if (block.terminal?.output && folds.outputAction) mount.outputState = noteOutputOverride(folds.outputAction);
+      const session = this.sessionFor(mount);
+      const output = block.terminal?.output;
+      const action = output && (session?.expandOutputOwners || folds?.expandOutputOwners) ? 'open-outputs' : folds?.bodyAction;
+      if (action) mount.foldOverride = noteFoldOverride(block, settings, action);
+      if (output) {
+        const outputAction = session?.outputAction ?? folds?.outputAction;
+        if (outputAction) mount.outputState = this.bulkOutputState(output, outputAction);
       }
       this.mounts.set(pre, mount);
       child.register(() => {
+        mount.sessionMenu?.destroy();
         mount.header?.remove();
         mount.expandFooter?.remove();
         mount.layout?.destroy();
@@ -115,6 +138,92 @@ export class ReadingHeaders {
       context.addChild(child);
     }
     this.renderOutputs();
+  }
+
+  private documentFor(scope: Document | HTMLElement, context: MarkdownPostProcessorContext, source: string): ReadingDocument {
+    let documents = this.documents.get(scope);
+    if (!documents) this.documents.set(scope, documents = new Map());
+    const current = documents.get(context.docId);
+    if (current?.path === context.sourcePath && current.source === source) return current;
+    // Keep defaults through lazy unmounts, but retire old renderings when another one starts.
+    const mounted = new Set([...this.mounts.values()].map((mount) => mount.document));
+    for (const [id, document] of documents) if (!mounted.has(document)) documents.delete(id);
+    const document: ReadingDocument = { path: context.sourcePath, source, sessions: new Map() };
+    documents.set(context.docId, document);
+    return document;
+  }
+
+  private sessionFor(mount: Mount): SessionState | undefined {
+    const from = mount.block.terminal?.sessionFrom;
+    return from === undefined ? undefined : mount.document.sessions.get(from);
+  }
+
+  private createSessionMenu(pre: HTMLElement, mount: Mount): ReadingSessionMenu {
+    return new ReadingSessionMenu(pre.ownerDocument, () => {
+      const from = mount.block.terminal?.sessionFrom;
+      if (from === undefined) return;
+      const blocks = parseCodeBlocks(mount.document.source, this.getSettings()).blocks
+        .filter((block) => block.terminal?.sessionFrom === from);
+      const commands = blocks.flatMap((block) =>
+        splitCommands(block.text, block.language).map((range) => block.text.slice(range.from, range.to)));
+      const document = mount.document;
+      const act = (update: (state: SessionState) => void, redraw: () => void) => {
+        if (this.mounts.get(pre) !== mount || mount.document !== document || mount.block.terminal?.sessionFrom !== from) return;
+        const state = this.sessionFor(mount) ?? {};
+        document.sessions.set(from, state);
+        update(state);
+        this.preserveScroll(pre, redraw);
+      };
+      return {
+        hasCommands: commands.length > 0,
+        hasOutputs: blocks.some((block) => block.terminal?.output),
+        promptMode: this.sessionFor(mount)?.prompt,
+        changeOutputs: (action) => act((state) => {
+          state.outputAction = action;
+          if (action === 'open-outputs') state.expandOutputOwners = true;
+        }, () => this.updateSession(document, blocks, action)),
+        changePrompt: (mode) => act((state) => {
+          state.prompt = mode;
+        }, () => this.updateSession(document, blocks)),
+        copyCommands: () => { void copyCode(pre.ownerDocument, commands.join('\n')); },
+      };
+    });
+  }
+
+  private updateSession(document: ReadingDocument, commands: CodeBlock[], action?: SessionOutputAction): void {
+    const members = new Set(commands.map((block) => block.from));
+    const settings = this.getSettings();
+    for (const [pre, mount] of this.mounts) {
+      if (mount.document !== document || !members.has(mount.block.from)) continue;
+      if (!action) this.render(pre, mount);
+      else if (mount.block.terminal?.output) {
+        this.setOutputState(mount, this.bulkOutputState(mount.block.terminal.output, action));
+        if (action === 'open-outputs') this.setBodyFold(pre, mount, settings, noteFoldOverride(mount.block, settings, action));
+      }
+    }
+    this.renderOutputs((mount, _pre, ownerFrom) => mount.document === document && members.has(ownerFrom));
+  }
+
+  private bulkOutputState(output: CodeBlock, action: SessionOutputAction): OutputState {
+    return action === 'reset-outputs' ? initialOutputState(output)
+      : noteOutputOverride(action);
+  }
+
+  private setOutputState(mount: Mount, state: OutputState): void {
+    // The existing output toggle retains this object.
+    if (mount.outputState) Object.assign(mount.outputState, state);
+    else mount.outputState = state;
+    if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputState(mount.outputState);
+  }
+
+  private setBodyFold(pre: HTMLElement, mount: Mount, settings: MottoSettings, override: FoldState | undefined): void {
+    mount.foldOverride = override;
+    const state = resolveFoldState(mount.block, settings, override);
+    if (mount.foldState !== state) {
+      mount.foldState = state;
+      if (mount.header) setHeaderFoldState(mount.header, state);
+      this.renderBody(pre, mount);
+    }
   }
 
   setNoteFolds(container: HTMLElement, path: string, action: NoteFoldAction): void {
@@ -133,30 +242,35 @@ export class ReadingHeaders {
       this.noteFolds.set(container, folds);
     }
 
-    const settings = this.getSettings();
-    for (const [pre, mount] of this.mounts) {
-      if (mount.sourcePath !== path || !container.contains(pre) || pre.closest('.markdown-embed')) continue;
-      if (settings.commandBlocks && mount.block.terminal?.output) {
-        const state = action === 'reset-folds' ? initialOutputState(mount.block.terminal.output) : noteOutputOverride(action);
-        if (state) {
-          // Keep the state object captured by the existing output toggle.
-          if (mount.outputState) Object.assign(mount.outputState, state);
-          else mount.outputState = state;
-          if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputState(state);
-        }
-      }
-      if (!mount.header) continue;
-      const override = noteFoldOverride(mount.block, settings, action);
-      if (override === undefined && action !== 'reset-folds') continue;
-      mount.foldOverride = override;
-      const state = resolveFoldState(mount.block, settings, override);
-      if (mount.foldState !== state) {
-        mount.foldState = state;
-        setHeaderFoldState(mount.header, state);
-        this.renderBody(pre, mount);
+    const matches = (mount: Mount, pre: HTMLElement) =>
+      mount.document.path === path && container.contains(pre) && !pre.closest('.markdown-embed');
+    const documents = new Set<ReadingDocument>();
+    for (const scope of [container, ...container.querySelectorAll<HTMLElement>('.markdown-preview-view')]) {
+      if (scope.closest('.markdown-embed')) continue;
+      for (const document of this.documents.get(scope)?.values() ?? []) {
+        if (document.path === path) documents.add(document);
       }
     }
-    this.renderOutputs(container, path);
+    for (const [pre, mount] of this.mounts) if (matches(mount, pre)) documents.add(mount.document);
+    for (const document of documents) {
+      for (const session of document.sessions.values()) {
+        if (action !== 'fold-blocks' && action !== 'expand-blocks') delete session.outputAction;
+        if (action !== 'close-outputs') delete session.expandOutputOwners;
+      }
+    }
+    const settings = this.getSettings();
+    for (const [pre, mount] of this.mounts) {
+      if (!matches(mount, pre)) continue;
+      if (settings.commandBlocks && mount.block.terminal?.output) {
+        const state = action === 'reset-folds' ? initialOutputState(mount.block.terminal.output) : noteOutputOverride(action);
+        if (state) this.setOutputState(mount, state);
+      }
+      if (!hasFoldableHeader(mount.block, settings)) continue;
+      const override = noteFoldOverride(mount.block, settings, action);
+      if (override === undefined && action !== 'reset-folds') continue;
+      this.setBodyFold(pre, mount, settings, override);
+    }
+    this.renderOutputs(matches);
   }
 
   private foldsFor(element: HTMLElement, path: string, clearIfChanged = false): NoteFolds | undefined {
@@ -174,11 +288,12 @@ export class ReadingHeaders {
     const parsed = new Map<string, Map<number, CodeBlock>>();
     const settings = this.getSettings();
     for (const mount of this.mounts.values()) {
-      let blocks = parsed.get(mount.source);
+      const source = mount.document.source;
+      let blocks = parsed.get(source);
       if (!blocks) {
-        blocks = new Map(parseCodeBlocks(mount.source, settings)
+        blocks = new Map(parseCodeBlocks(source, settings)
           .blocks.map((block) => [block.from, block]));
-        parsed.set(mount.source, blocks);
+        parsed.set(source, blocks);
       }
       const block = blocks.get(mount.block.from);
       if (block) this.updateBlock(mount, block);
@@ -241,6 +356,10 @@ export class ReadingHeaders {
     const settings = this.getSettings();
     mount.header?.remove();
     mount.header = null;
+    if (!settings.commandBlocks || mount.block.terminal?.session !== 'first') {
+      mount.sessionMenu?.destroy();
+      delete mount.sessionMenu;
+    }
     if (!isCodeBlockEnabled(mount.block, settings)) {
       mount.expandFooter?.remove();
       mount.expandFooter = null;
@@ -254,7 +373,7 @@ export class ReadingHeaders {
     }
     const owner = settings.commandBlocks && mount.block.commandFrom !== undefined
       ? [...this.mounts.values()].find((candidate) =>
-        candidate.docId === mount.docId && candidate.sourcePath === mount.sourcePath && candidate.source === mount.source &&
+        candidate.document === mount.document &&
         candidate.block.from === mount.block.commandFrom && candidate.block.terminal?.output?.from === mount.block.from)
       : undefined;
     if (owner) {
@@ -286,7 +405,11 @@ export class ReadingHeaders {
       mount.outputState ??= initialOutputState(mount.block.terminal.output);
     } else mount.outputState = undefined;
     mount.foldState = resolveFoldState(mount.block, settings, mount.foldOverride);
-    mount.header = createHeader(pre.ownerDocument, mount.block, settings, {
+    const prompt = this.sessionFor(mount)?.prompt;
+    const terminal = mount.block.terminal;
+    const showPromptHeader = prompt === 'header' && Boolean(terminal?.user || terminal?.host || terminal?.cwd);
+    mount.header = createHeader(pre.ownerDocument, this.displayBlock(mount), showPromptHeader
+      ? { ...settings, headerDisplay: 'always' } : settings, hasFoldableHeader(mount.block, settings) ? {
       state: mount.foldState,
       toggle: () => this.preserveScroll(pre, () => {
         mount.foldState = nextFoldState(mount.block, this.getSettings(), mount.foldState);
@@ -295,7 +418,7 @@ export class ReadingHeaders {
         this.renderBody(pre, mount);
         this.renderOutputs();
       }),
-    });
+    } : undefined);
     if (!mount.header) {
       mount.foldState = 'expanded';
       mount.foldOverride = undefined;
@@ -306,6 +429,16 @@ export class ReadingHeaders {
       pre.before(mount.header);
     }
     this.renderBody(pre, mount);
+  }
+
+  private displayBlock(mount: Mount): CodeBlock {
+    const prompt = this.sessionFor(mount)?.prompt;
+    const block = mount.block;
+    if (!prompt || !block.terminal) return block;
+    const terminal = { ...block.terminal };
+    if (prompt === 'header') delete terminal.promptDisplay;
+    else terminal.promptDisplay = prompt;
+    return { ...block, terminal };
   }
 
   private renderBody(pre: HTMLElement, mount: Mount): void {
@@ -326,13 +459,19 @@ export class ReadingHeaders {
     if (settings.commandBlocks && mount.block.terminal) {
       const output = mount.block.terminal.output;
       const outputState = mount.outputState;
-      mount.layout = new ReadingCommandView(pre, mount.block, mount.wrappedCommands, settings.outputToggleStyles,
+      if (mount.block.terminal.session === 'first') mount.sessionMenu ??= this.createSessionMenu(pre, mount);
+      const folded = mount.foldState === 'folded';
+      mount.layout = new ReadingCommandView(pre, this.displayBlock(mount), mount.wrappedCommands, settings.outputToggleStyles,
         mount.foldState, preview, outputState,
         output && outputState ? () => this.preserveScroll(pre, () => {
           Object.assign(outputState, nextOutputState(output, outputState));
           if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputState(outputState);
           this.renderOutputs();
-        }) : undefined, settings.tapMyHippo, settings.commandSpacing);
+        }) : undefined, settings.tapMyHippo, settings.commandSpacing, folded ? undefined : mount.sessionMenu);
+      if (folded && mount.header && mount.sessionMenu) {
+        const controls = mount.header.querySelector<HTMLElement>('.motto-header-controls');
+        if (controls) mount.sessionMenu.attach(mount.header, controls);
+      }
       return;
     }
     if (mount.block.language === 'ansi') {
@@ -359,10 +498,10 @@ export class ReadingHeaders {
       : null;
   }
 
-  private renderOutputs(container?: HTMLElement, path?: string): void {
+  private renderOutputs(matches?: (mount: Mount, pre: HTMLElement, ownerFrom: number) => boolean): void {
     for (const [pre, mount] of this.mounts) {
-      if (container && (mount.sourcePath !== path || !container.contains(pre) || pre.closest('.markdown-embed'))) continue;
-      if (mount.block.commandFrom !== undefined) this.render(pre, mount);
+      const from = mount.block.commandFrom;
+      if (from !== undefined && (!matches || matches(mount, pre, from))) this.render(pre, mount);
     }
   }
 }

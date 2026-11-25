@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettin
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 import { outputPreviewLineCount, type OutputState } from './folding';
+import type { ReadingSessionMenu } from './session-menu';
 
 export class ReadingCommandView {
   private readonly pre: HTMLElement;
@@ -13,6 +14,7 @@ export class ReadingCommandView {
   private readonly styles: MottoSettings['outputToggleStyles'];
   private readonly tapMyHippo: boolean;
   private readonly output: CodeBlock | undefined;
+  private readonly expanded: boolean;
   private outputState: OutputState | undefined;
 
   constructor(
@@ -20,18 +22,20 @@ export class ReadingCommandView {
     foldState: FoldState, preview: number | undefined,
     outputState: OutputState | undefined, toggle?: () => void,
     tapMyHippo = false, spacing: CommandSpacing = DEFAULT_SETTINGS.commandSpacing,
+    sessionMenu?: ReadingSessionMenu,
   ) {
     this.pre = pre;
     this.styles = styles;
     this.output = block.terminal?.output;
     this.outputState = outputState;
+    this.expanded = foldState === 'expanded';
     this.tapMyHippo = tapMyHippo;
     const document = pre.ownerDocument;
     const code = pre.querySelector<HTMLElement>(':scope > code')!;
     const view = this.view = createEl(document, 'div');
     view.className = `motto-command-view motto-command-spacing-${spacing}`;
     view.classList.toggle('motto-command-partial', preview !== undefined);
-    view.classList.toggle('motto-command-output-open', this.outputState?.open === true && foldState === 'expanded');
+    view.classList.toggle('motto-command-output-open', this.outputState?.open === true && this.expanded);
     view.hidden = foldState === 'folded' || pre.hidden;
     pre.before(view);
     const prompt = formatCommandPrompt(block.language, block.terminal);
@@ -70,10 +74,14 @@ export class ReadingCommandView {
           this.outputState?.open === true, this.styles,
           index === commands.length - 1 && command.to <= cutoff ? toggle : undefined, this.tapMyHippo, this.partialOutput);
         row.append(tools);
+        if (index === 0) sessionMenu?.attach(view, tools);
       }
-      if (commands.length === 0 && toggle) {
-        view.append(commandTools(document, null, this.outputState?.open === true, this.styles,
-          toggle, this.tapMyHippo, this.partialOutput));
+      if (commands.length === 0 && (toggle || sessionMenu)) {
+        const tools = commandTools(document, null, this.outputState?.open === true, this.styles,
+          toggle, this.tapMyHippo, this.partialOutput);
+        if (sessionMenu) tools.classList.add('motto-session-empty-tools');
+        view.append(tools);
+        sessionMenu?.attach(view, tools);
       }
     };
     render();
@@ -97,7 +105,7 @@ export class ReadingCommandView {
 
   setOutputState(state: OutputState): void {
     this.outputState = state;
-    this.view.classList.toggle('motto-command-output-open', state.open);
+    this.view.classList.toggle('motto-command-output-open', state.open && this.expanded);
     const button = this.view.querySelector<HTMLButtonElement>('.motto-output-toggle');
     if (button) setOutputToggle(button, state.open, this.styles, this.tapMyHippo, this.partialOutput);
   }

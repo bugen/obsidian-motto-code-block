@@ -71,6 +71,52 @@ export function setTooltip(element: HTMLElement, tooltip: string): void {
   element.setAttribute('aria-label', tooltip);
 }
 
+class MenuItem {
+  title = '';
+  disabled = false;
+  checked = false;
+  click?: () => void;
+
+  setTitle(title: string): this { this.title = title; return this; }
+  setDisabled(disabled: boolean): this { this.disabled = disabled; return this; }
+  setChecked(checked: boolean): this { this.checked = checked; return this; }
+  setIcon(): this { return this; }
+  onClick(click: () => void): this { this.click = click; return this; }
+}
+
+export class Menu {
+  static active: Menu | undefined;
+  readonly items: MenuItem[] = [];
+  position: { x: number; y: number; width?: number; left?: boolean; overlap?: boolean } | undefined;
+  private didHide?: () => void;
+
+  setUseNativeMenu(): this { return this; }
+  addItem(build: (item: MenuItem) => void): this {
+    const item = new MenuItem();
+    build(item);
+    this.items.push(item);
+    return this;
+  }
+  addSeparator(): this { return this; }
+  onHide(callback: () => void): void { this.didHide = callback; }
+  showAtPosition(position: Menu['position']): this {
+    this.position = position;
+    Menu.active = this;
+    return this;
+  }
+  hide(): this {
+    if (Menu.active === this) Menu.active = undefined;
+    this.didHide?.();
+    return this;
+  }
+  choose(title: string): void {
+    const item = this.items.find((candidate) => candidate.title === title);
+    if (!item || item.disabled || !item.click) throw new Error(`Unavailable menu item: ${title}`);
+    this.hide();
+    item.click();
+  }
+}
+
 export async function loadPrism(): Promise<{ highlightElement(element: HTMLElement): void }> {
   return {
     highlightElement(element) {

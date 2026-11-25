@@ -7,7 +7,7 @@ import ansiIcon from '../src/ansi.svg';
 import MottoCodeBlockPlugin from '../src/main';
 import { ReadingHeaders } from '../src/reading';
 import { DEFAULT_SETTINGS, parseSettings, type MottoSettings } from '../src/settings';
-import { MarkdownView, TFile } from './obsidian';
+import { MarkdownView, Menu, TFile } from './obsidian';
 
 const renderers: ReadingHeaders[] = [];
 
@@ -176,6 +176,131 @@ describe('reading mode headers', () => {
     updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'always' });
     expect(last.section.querySelector('.motto-command-header')).not.toBeNull();
     expect(last.section.querySelector('.motto-command-context')).toBeNull();
+  });
+
+  it('anchors one session button to the first block and moves it beside the copy control when the pane is narrow', async () => {
+    const { renderer, context } = fixture('```bash cmd\npwd\n```\n```bash cmd\nls\n```');
+    const pane = document.body.createDiv();
+    pane.className = 'markdown-preview-view';
+    const first = block('pwd', 'bash');
+    const last = block('ls', 'bash');
+    pane.append(first.section, last.section);
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1200);
+    const width = vi.spyOn(pane, 'clientWidth', 'get').mockReturnValue(1000);
+    const getRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.matches('.motto-command-view')) return new DOMRect(100, 50, 500, 48);
+      if (this.matches('.motto-session-menu')) {
+        return this.closest('.motto-session-menu-side') ? new DOMRect(606, 58, 34, 34) : new DOMRect(561, 62, 24, 24);
+      }
+      return getRect.call(this);
+    });
+    await renderer.process(last.section, context);
+    await renderer.process(first.section, context);
+    const button = first.section.querySelector<HTMLButtonElement>('.motto-session-menu')!;
+    expect(pane.querySelectorAll('.motto-session-menu')).toHaveLength(1);
+    expect(pane.querySelector('.motto-header')).toBeNull();
+    expect(button.closest('.motto-session-menu-side')).not.toBeNull();
+    button.click();
+    expect(Menu.active?.position).toMatchObject({ x: 606, y: 58, width: 34 });
+    expect(Menu.active?.items.find((item) => item.title === 'Open all outputs')?.disabled).toBe(true);
+    Menu.active?.hide();
+
+    width.mockReturnValue(643);
+    await renderer.process(first.section, context);
+    expect(button.closest('.motto-session-menu-side')).toBeNull();
+    expect(button.previousElementSibling?.getAttribute('aria-label')).toBe('Copy command');
+    button.click();
+    expect(Menu.active?.position).toMatchObject({ x: 561, y: 86, width: 24, overlap: true });
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens, closes and resets only the chosen session, including outputs mounted later', async () => {
+    const { renderer, context } = fixture([
+      '```bash cmd fold\npwd\n```',
+      '```ansi\n/home/demo\n```',
+      '```bash cmd fold\nls\n```',
+      '```ansi expand:1\none\ntwo\n```',
+      '',
+      '```bash cmd\nwhoami\n```',
+      '```ansi expand\ndemo\n```',
+      '```bash cmd\nid\n```',
+    ].join('\n'));
+    const pane = document.body.createDiv();
+    pane.className = 'markdown-preview-view';
+    const split = document.body.createDiv();
+    split.className = 'markdown-preview-view';
+    const first = block('pwd', 'bash');
+    const firstOutput = block('/home/demo', 'ansi');
+    const last = block('ls', 'bash');
+    const lastOutput = block('one\ntwo', 'ansi');
+    const other = block('whoami', 'bash');
+    const otherOutput = block('demo', 'ansi');
+    const splitFirst = block('pwd', 'bash');
+    const splitOutput = block('/home/demo', 'ansi');
+    pane.append(first.section, firstOutput.section, other.section, otherOutput.section);
+    split.append(splitFirst.section, splitOutput.section);
+    for (const { section } of [first, firstOutput, other, otherOutput, splitFirst, splitOutput]) {
+      await renderer.process(section, context);
+    }
+    const action = (title: string) => {
+      first.section.querySelector<HTMLButtonElement>('.motto-session-menu')!.click();
+      Menu.active!.choose(title);
+    };
+    const output = ({ section }: typeof first) => section.querySelector<HTMLElement>('.motto-command-output:not([hidden])');
+    expect(first.section.querySelector('.motto-header .motto-session-menu')).not.toBeNull();
+    action('Open all outputs');
+    expect(output(firstOutput)?.textContent).toContain('/home/demo');
+    expect(output(splitOutput)).toBeNull();
+    pane.append(last.section, lastOutput.section);
+    await renderer.process(lastOutput.section, context);
+    await renderer.process(last.section, context);
+    expect(output(lastOutput)?.textContent).toContain('two');
+    expect(last.section.querySelector('.motto-header')?.getAttribute('data-fold-state')).toBe('expanded');
+    action('Close all outputs');
+    expect(output(firstOutput)).toBeNull();
+    expect(output(lastOutput)).toBeNull();
+    expect(output(otherOutput)?.textContent).toContain('demo');
+    action('Reset output states');
+    expect(output(firstOutput)).toBeNull();
+    expect(output(lastOutput)?.querySelector('.motto-expand-button')?.textContent).toBe('Show all (1 more line)');
+    expect(last.section.querySelector('.motto-header')?.getAttribute('data-fold-state')).toBe('expanded');
+  });
+
+  it('temporarily switches prompts and copies complete commands from the source even before they render', async () => {
+    const source = [
+      '```bash cmd prompt:"demo@server:~" prompt-display:inline\nprintf \\\n  hello\n```',
+      '```ansi\nhello\n```',
+      '```powershell cmd prompt:"demo@server:C:/work" prompt-display:hide\nGet-Location\n```',
+      '',
+      '```bash cmd\nwhoami\n```',
+    ].join('\n');
+    const { renderer, context, readSource, updateSource } = fixture(source);
+    const first = block('printf \\\n  hello', 'bash');
+    const last = block('Get-Location', 'powershell');
+    await renderer.process(first.section, context);
+    const action = (title: string) => {
+      first.section.querySelector<HTMLButtonElement>('.motto-session-menu')!.click();
+      Menu.active!.choose(title);
+    };
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    action('Copy all commands');
+    expect(write).toHaveBeenCalledExactlyOnceWith('printf \\\n  hello\nGet-Location');
+    action('Prompt: Hide');
+    expect(first.section.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    expect(first.section.querySelector('.motto-command-prompt [aria-label]')?.getAttribute('aria-label')).toBe('demo@server:~$');
+    action('Prompt: Header');
+    expect(first.section.querySelector('.motto-command-context')?.textContent).toBe('demo@server:~');
+    await renderer.process(last.section, context);
+    expect(last.section.querySelector('.motto-command-context')?.textContent).toBe('demo@server:C:/work');
+    action('Prompt: Inline');
+    expect(last.section.querySelector('.motto-command-prompt')?.textContent).toBe('demo@server:C:/work>');
+    expect(last.section.querySelector('.motto-command-context')).toBeNull();
+    expect(await readSource()).toBe(source);
+
+    updateSource(source.replace('prompt-display:inline', 'prompt-display:hide'));
+    await renderer.process(first.section, context);
+    expect(first.section.querySelector('.motto-command-prompt')?.textContent).toBe('$');
   });
 
   it('displays only the symbol and keeps the complete prompt in the hover text', async () => {
