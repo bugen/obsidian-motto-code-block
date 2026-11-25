@@ -45,7 +45,7 @@ export class ReadingHeaders {
     this.getSettings = getSettings;
   }
 
-  async process(element: HTMLElement, context: MarkdownPostProcessorContext): Promise<void> {
+  async process(element: HTMLElement, context: MarkdownPostProcessorContext, previewSource?: string): Promise<void> {
     if (this.disposed || element.closest('.markdown-source-view')) return;
     this.foldsFor(element, context.sourcePath, true);
     const pres = [
@@ -53,7 +53,7 @@ export class ReadingHeaders {
       ...element.querySelectorAll<HTMLElement>('pre'),
     ].filter((pre) => pre.querySelector(':scope > code') && !pre.closest('.motto-command-view, .motto-ansi-view'));
     if (pres.length === 0) return;
-    const source = await this.readSource(context.sourcePath);
+    const source = previewSource ?? await this.readSource(context.sourcePath);
     if (this.disposed || source === undefined) return;
     const settings = this.getSettings();
     const result = parseCodeBlocks(source, settings);

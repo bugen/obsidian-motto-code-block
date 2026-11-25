@@ -84,6 +84,7 @@ export async function loadPrism(): Promise<{ highlightElement(element: HTMLEleme
 }
 
 export class App {}
+export class MarkdownView {}
 export class Plugin {}
 export class TFile {}
 

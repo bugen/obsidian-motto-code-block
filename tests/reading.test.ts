@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
-import type { MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
+import { App, type Editor, type MarkdownPostProcessor, type MarkdownPostProcessorContext, type MarkdownRenderChild } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ansiIcon from '../src/ansi.svg';
+import MottoCodeBlockPlugin from '../src/main';
 import { ReadingHeaders } from '../src/reading';
 import { DEFAULT_SETTINGS, parseSettings, type MottoSettings } from '../src/settings';
+import { MarkdownView, TFile } from './obsidian';
 
 const renderers: ReadingHeaders[] = [];
 
@@ -55,6 +57,79 @@ afterEach(() => {
 });
 
 describe('reading mode headers', () => {
+  it('updates unsaved prompt options when entering a preview that reused its rendered sections', async () => {
+    const saved = '```bash cmd prompt:"demo@server:~" prompt-display:inline\npwd\n```';
+    const updated = saved.replace('prompt-display:inline', 'prompt-display:hide');
+    const { context } = fixture(saved);
+    const shell = block('pwd', 'bash');
+    const other = block('pwd', 'bash');
+    const file = Object.assign(new TFile(), { path: context.sourcePath });
+    const pane = (containerEl: HTMLElement, get: () => string) => Object.assign(new MarkdownView(), {
+      file, containerEl, contentEl: containerEl, editor: {} as Editor,
+      getMode: vi.fn<() => 'source' | 'preview'>(() => 'preview'),
+      previewMode: { containerEl, get, rerender: vi.fn() },
+    });
+    let previewSource = saved;
+    const active = pane(shell.section, () => previewSource);
+    const inactive = pane(other.section, () => saved);
+    const cachedRead = vi.fn(async () => saved);
+    const on = vi.fn<(...args:
+      ['editor-change', (editor: Editor, view: MarkdownView) => void] | ['layout-change', () => void]
+    ) => void>();
+    const app = Object.assign(new App(), {
+      vault: { getAbstractFileByPath: () => file, cachedRead },
+      workspace: { getLeavesOfType: () => [{ view: inactive }, { view: active }], on },
+    });
+    const postProcessor = vi.fn<(handler: MarkdownPostProcessor) => void>();
+    const register = vi.fn<(cleanup: () => void) => void>();
+    const plugin = Object.assign(new MottoCodeBlockPlugin(app, {
+      id: 'motto-code-block', name: 'Motto Code Block', version: '0.1.1',
+      minAppVersion: '1.5.0', author: '', description: '',
+    }), {
+      app, loadData: async () => null, register, registerMarkdownPostProcessor: postProcessor,
+      registerEvent: vi.fn(), registerEditorExtension: vi.fn(), addCommand: vi.fn(), addSettingTab: vi.fn(),
+    });
+    try {
+      await plugin.onload();
+      const process = postProcessor.mock.calls[0]![0];
+      const editorChange = on.mock.calls.find((args) => args[0] === 'editor-change')![1];
+      const layoutChange = on.mock.calls.find((args) => args[0] === 'layout-change')![1];
+      const render = active.previewMode.rerender.mockImplementation(() => { void process(shell.section, context); });
+      await process(other.section, { ...context, docId: 'other' });
+      await process(shell.section, context);
+      expect(shell.section.querySelector('.motto-command-prompt')?.textContent).toBe('demo@server:~$');
+
+      active.getMode.mockReturnValue('source');
+      shell.section.hidden = true;
+      previewSource = updated;
+      editorChange(active.editor, active);
+      editorChange(active.editor, active);
+      layoutChange();
+      expect(render).not.toHaveBeenCalled();
+
+      active.getMode.mockReturnValue('preview');
+      shell.section.hidden = false;
+      // The switch reused the old <pre> and did not invoke the postprocessor.
+      await vi.waitFor(() => {
+        expect(shell.section.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+      });
+      layoutChange();
+      expect(render).toHaveBeenCalledExactlyOnceWith(true);
+      expect(inactive.previewMode.rerender).not.toHaveBeenCalled();
+      expect(other.section.querySelector('.motto-command-prompt')?.textContent).toBe('demo@server:~$');
+      expect(cachedRead).not.toHaveBeenCalled();
+
+      const embed = block('pwd', 'bash');
+      embed.section.classList.add('markdown-embed');
+      shell.section.append(embed.section);
+      await process(embed.section, { ...context, docId: 'embed' });
+      expect(embed.section.querySelector('.motto-command-prompt')?.textContent).toBe('demo@server:~$');
+      expect(cachedRead).toHaveBeenCalledExactlyOnceWith(file);
+    } finally {
+      for (const [cleanup] of register.mock.calls) cleanup();
+    }
+  });
+
   it('compacts a session across individually rendered sections and keeps its output controls independent', async () => {
     const stylesheet = document.body.createEl('style');
     stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
