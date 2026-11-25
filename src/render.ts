@@ -130,7 +130,7 @@ export function createHeader(
     title.textContent = block.title;
     title.title = block.title;
   }
-  if (terminal && (terminal.user || terminal.host || terminal.cwd)) {
+  if (terminal && terminal.promptDisplay === undefined && (terminal.user || terminal.host || terminal.cwd)) {
     const context = header.createSpan();
     context.className = 'motto-command-context';
     const append = (key: 'user' | 'host' | 'cwd') => {

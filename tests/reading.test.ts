@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
+import { URL as NodeURL } from 'node:url';
 import type { MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ansiIcon from '../src/ansi.svg';
@@ -53,6 +55,67 @@ afterEach(() => {
 });
 
 describe('reading mode headers', () => {
+  it('compacts a session across individually rendered sections and keeps its output controls independent', async () => {
+    const stylesheet = document.body.createEl('style');
+    stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
+    const { renderer, context, updateSettings } = fixture([
+      '```bash cmd prompt:"demo@server:~" prompt-display:inline\npwd\n```',
+      '```ansi\n/home/demo\n```',
+      '```bash cmd prompt:"root@server:/work" prompt-display:inline\nls\n```',
+      '```ansi\nresult\n```',
+    ].join('\n'));
+    const first = block('pwd', 'bash');
+    const firstOutput = block('/home/demo', 'ansi');
+    const last = block('ls', 'bash');
+    const lastOutput = block('result', 'ansi');
+    for (const { section } of [firstOutput, first, last, lastOutput]) await renderer.process(section, context);
+
+    expect(first.section.querySelector('.motto-header')).toBeNull();
+    const commandView = (native: typeof first) => native.section.querySelector<HTMLElement>('.motto-command-view')!;
+    expect(getComputedStyle(commandView(first)).marginBlockEnd).toBe('0');
+    expect(getComputedStyle(commandView(last)).marginBlockStart).toBe('0');
+    const prompt = last.section.querySelector<HTMLButtonElement>('.motto-command-prompt')!;
+    expect(prompt.textContent).toBe('root@server:/work#');
+    expect(prompt.lastElementChild?.getAttribute('aria-label')).toBe('root@server:/work#');
+    expect(getComputedStyle(prompt.querySelector('.motto-command-prompt-context')!).textOverflow).toBe('ellipsis');
+    expect(prompt.lastElementChild?.textContent).toBe('#');
+    expect(getComputedStyle(prompt.lastElementChild!).flexShrink).toBe('0');
+    const output = (native: typeof first) => native.section.querySelector<HTMLElement>('.motto-command-output');
+    const toggle = (native: typeof first) => native.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    toggle(first);
+    expect(output(firstOutput)?.dataset.commandSession).toBe('first');
+    expect(getComputedStyle(output(firstOutput)!).marginBlockEnd).toBe('0');
+    expect(output(lastOutput)).toBeNull();
+    prompt.click();
+    expect(last.section.querySelector('.motto-command-wrap')).not.toBeNull();
+    expect(output(lastOutput)).toBeNull();
+    toggle(last);
+    expect(output(lastOutput)?.dataset.commandSession).toBe('last');
+    toggle(first);
+    expect(output(firstOutput)?.hidden).toBe(true);
+    expect(output(lastOutput)?.hidden).toBe(false);
+
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    last.section.querySelector<HTMLButtonElement>('[aria-label="Copy command"]')!.click();
+    expect(write).toHaveBeenLastCalledWith('ls');
+    updateSettings({ ...DEFAULT_SETTINGS, headerDisplay: 'always' });
+    expect(last.section.querySelector('.motto-command-header')).not.toBeNull();
+    expect(last.section.querySelector('.motto-command-context')).toBeNull();
+  });
+
+  it('displays only the symbol and keeps the complete prompt in the hover text', async () => {
+    const { renderer, context } = fixture('```bash cmd prompt:"demo@server:~/deep/path" prompt-display:hide\npwd\n```');
+    const shell = block('pwd', 'bash');
+    await renderer.process(shell.section, context);
+
+    const prompt = shell.section.querySelector<HTMLButtonElement>('.motto-command-prompt')!;
+    expect(prompt.textContent).toBe('$');
+    expect(prompt.lastElementChild?.getAttribute('aria-label')).toBe('demo@server:~/deep/path$');
+    expect(shell.section.querySelector('.motto-command-inline-prompt, .motto-header')).toBeNull();
+    prompt.click();
+    expect(shell.section.querySelector('.motto-command-wrap')).not.toBeNull();
+  });
+
   it.each(['header', 'output'])('keeps the reading scroll position when the %s changes the preview height', async (control) => {
     vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
     const shell = control === 'output';

@@ -120,6 +120,46 @@ describe('command blocks', () => {
     ]);
   });
 
+  it('groups only consecutive explicit command blocks at the same Markdown level', () => {
+    const command = (text: string) => `\`\`\`bash cmd\n${text}\n\`\`\``;
+    const output = '```ansi\nfirst\n\nlast\n```';
+    const quote = (text: string) => text.split('\n').map((line) => `> ${line}`).join('\n');
+    const source = [
+      command('one'), output, command('two'), command('three'), '',
+      command('isolated'), quote(command('quote-one')), quote(command('quote-two')), command('outside'),
+      '```bash cmd exclude\nexcluded\n```', command('after-excluded'),
+      '```bash\nimplicit\n```', output,
+    ].join('\r\n');
+    const { blocks } = parseCodeBlocks(source);
+    expect(blocks.filter((block) => block.terminal).map((block) => [block.text, block.terminal?.session])).toEqual([
+      ['one', 'first'], ['two', 'middle'], ['three', 'last'], ['isolated', undefined],
+      ['quote-one', 'first'], ['quote-two', 'last'], ['outside', undefined], ['after-excluded', undefined],
+      ['implicit', undefined],
+    ]);
+    expect(blocks[0]?.terminal?.output?.text).toBe('first\n\nlast');
+  });
+
+  it('preserves explicit commands when a language is also configured as output', () => {
+    const { blocks } = parseCodeBlocks('```bash cmd\none\n```\n```bash cmd\ntwo\n```',
+      { ...DEFAULT_SETTINGS, outputLanguages: ['bash'] });
+    expect(blocks.map((block) => [block.terminal?.session, block.commandFrom])).toEqual([
+      ['first', undefined], ['last', undefined],
+    ]);
+  });
+
+  it.each(['inline', 'hide'])('keeps prompt-display:%s out of the automatic header unless another header option is present', (mode) => {
+    const options = `bash cmd prompt:"root@server:~/work tree" prompt-display:${mode}`;
+    expect(parseInfo(options)).toMatchObject({
+      hasParameters: false, context: { user: 'root', host: 'server', cwd: '~/work tree', promptDisplay: mode },
+      diagnostics: [],
+    });
+    expect(parseInfo(`${options} title:Example`).hasParameters).toBe(true);
+    expect(parseInfo('bash prompt:"root@server:~" prompt-display:tooltip')).toMatchObject({
+      hasParameters: true, context: { user: 'root', host: 'server', cwd: '~' },
+      diagnostics: ['Invalid "prompt-display" value. Use "inline" or "hide".'],
+    });
+  });
+
   it.each(['exclude cmd', 'command EXCLUDE'])('prioritizes %s over metadata and diagnostics', (flags) => {
     const result = parseCodeBlocks(`\`\`\`bash ${flags} user:root expand:0\npwd\n\`\`\``);
     expect(result.blocks).toHaveLength(1);

@@ -39,6 +39,8 @@ The default **Command languages** are `sh`, `bash`, `zsh`, `csh`, `fish`, and `p
 Click a command's prompt to toggle line wrapping for that command, including any continuation lines. With wrapping off, scroll horizontally to read long lines.
 `powershell` blocks keep the PowerShell icon, show `>` instead of `$` or `#`, and use a trailing backtick to continue a command on the next line.
 
+In Reading view, consecutive `cmd` blocks with no blank lines between them are displayed as one compact terminal session. Live Preview keeps them separate for editing. Each output still opens and closes independently. Insert a blank line after a command and its output to start a new session.
+
 ![Command Block with shell commands and output](./screenshots/command_block_lvs.png)
 
 Standalone `ansi` blocks show the ANSI logo when their header and icons are enabled. In any `ansi` preview, the copy icon copies plain text; **RAW** copies the full text with ANSI escape sequences.
@@ -63,6 +65,8 @@ Add options after the language name on the opening code fence. Quote values that
 | `header-style:info` | Color the header using an Obsidian callout type. |
 | `cmd` | Render a fence listed in **Command languages** as a Command Block. |
 | `prompt:"user@host:~/project"` | Show the user, host, and working directory in a Command Block header. |
+| `prompt-display:inline` | Show the prompt on the command line instead of in the header. If space is limited, only the part before the prompt symbol is shortened. |
+| `prompt-display:hide` | Show only the prompt symbol on the command line. Hover over the symbol to see the full prompt above it. |
 | `user:`, `host:`, `cwd:` | Set the prompt fields individually. |
 | `exclude` | Disable this plugin's enhancements for the block. |
 

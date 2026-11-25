@@ -5,10 +5,14 @@ export interface TerminalContext {
   user?: string;
   host?: string;
   cwd?: string;
+  promptDisplay?: 'inline' | 'hide';
 }
+
+export type CommandSessionPosition = 'first' | 'middle' | 'last';
 
 export interface TerminalBlock extends TerminalContext {
   output?: CodeBlock;
+  session?: CommandSessionPosition;
 }
 
 export interface CodeBlock {
@@ -32,6 +36,7 @@ export interface CodeBlock {
 const foldOptions = new Map([['fold', true], ['expand', false], ['unfold', false]]);
 const valueOptions = new Map([
   ['title', 'title'], ['file', 'file'], ['header-style', 'header-style'], ['prompt', 'prompt'],
+  ['prompt-display', 'prompt-display'],
   ['user', 'user'], ['host', 'host'], ['cwd', 'cwd'],
   ['directory', 'cwd'], ['dir', 'cwd'], ['wd', 'cwd'], ['pwd', 'cwd'],
 ]);
@@ -44,6 +49,7 @@ export interface Diagnostic {
 export function parseInfo(info: string): {
   language: string; title: string; hasParameters: boolean;
   exclude?: boolean;
+  explicitCommand?: true;
   context?: TerminalContext;
   headerStyle?: string; fold?: boolean; previewLines?: number; diagnostics: string[];
 } {
@@ -54,6 +60,7 @@ export function parseInfo(info: string): {
   const values = new Map<string, string>();
   const diagnostics: string[] = [];
   let hasParameters = false;
+  let hasPromptParameters = false;
   let fold: boolean | undefined;
   let previewLines: number | undefined;
   let command = false;
@@ -67,13 +74,18 @@ export function parseInfo(info: string): {
     while (index < options.length && /\s/.test(options[index]!)) index++;
     const hasValue = options[index] === ':' || options[index] === '=';
     const valueKey = valueOptions.get(key);
-    if (foldOptions.has(key) || (hasValue && valueKey !== undefined)) hasParameters = true;
+    if (hasValue && (valueKey === 'prompt' || valueKey === 'user' || valueKey === 'host' || valueKey === 'cwd')) {
+      hasPromptParameters = true;
+    } else if (foldOptions.has(key) || (hasValue && valueKey !== undefined && valueKey !== 'prompt-display')) {
+      hasParameters = true;
+    }
     if (!hasValue) {
       if (foldOptions.has(key)) {
         fold = foldOptions.get(key);
         previewLines = undefined;
       } else if (key === 'cmd' || key === 'command') command = true;
       else if (key === 'exclude') exclude = true;
+      else if (key === 'prompt-display') diagnostics.push('The "prompt-display" option requires "inline" or "hide".');
       continue;
     }
     index++;
@@ -128,11 +140,17 @@ export function parseInfo(info: string): {
       if (parts[3] !== undefined) context.cwd = parts[3];
     } else diagnostics.push('Invalid "prompt" option. Use "user", "user@host", or "user@host:cwd".');
   }
+  const promptDisplay = values.get('prompt-display')?.toLowerCase();
+  if (promptDisplay === 'inline' || promptDisplay === 'hide') context.promptDisplay = promptDisplay;
+  else if (promptDisplay !== undefined) {
+    diagnostics.push('Invalid "prompt-display" value. Use "inline" or "hide".');
+  }
   return {
     language,
     title: values.get('file') || values.get('title') || '',
-    hasParameters,
+    hasParameters: hasParameters || (hasPromptParameters && context.promptDisplay === undefined),
     ...(exclude ? { exclude: true } : {}),
+    ...(command ? { explicitCommand: true } : {}),
     ...(command || Object.keys(context).length ? { context } : {}),
     ...(validStyle ? { headerStyle } : {}),
     ...(fold !== undefined ? { fold } : {}),
@@ -180,6 +198,7 @@ export function parseCodeBlocks(
   const blocks: CodeBlock[] = [];
   const pendingDiagnostics = new Map<number, string[]>();
   const adjacent = new Set<number>();
+  const explicitCommands = new Set<number>();
   const isCommandLanguage = (language: string) => settings.commandBlocks &&
     settings.commandLanguages.includes(language) && !settings.languageExcludeList.includes(language);
   parser.parse(source.slice(base)).iterate({
@@ -190,6 +209,9 @@ export function parseCodeBlocks(
       const info = parseInfo(infoNode ? source.slice(base + infoNode.from, base + infoNode.to) : '');
       const startLine = lineAt(starts, base + node.from);
       const endLine = lineAt(starts, base + node.to);
+      if (info.explicitCommand && !info.exclude && isCommandLanguage(info.language)) {
+        explicitCommands.add(starts[startLine]!);
+      }
       if (info.diagnostics.length > 0) pendingDiagnostics.set(startLine, info.diagnostics);
       blocks.push({
         from: starts[startLine]!,
@@ -223,12 +245,21 @@ export function parseCodeBlocks(
   for (let index = 0; index + 1 < blocks.length; index++) {
     const command = blocks[index]!;
     const output = blocks[index + 1]!;
-    if (command.exclude || output.exclude || command.commandFrom !== undefined ||
+    if (command.exclude || output.exclude || command.commandFrom !== undefined || explicitCommands.has(output.from) ||
         !isCommandLanguage(command.language) || !settings.outputLanguages.includes(output.language || 'plaintext') ||
         !adjacent.has(command.from) || !isLanguageEnabled(output.language, settings)) continue;
     command.terminal ??= {};
     command.terminal.output = output;
     output.commandFrom = command.from;
+  }
+  for (let index = 0; index + 1 < blocks.length; index++) {
+    const command = blocks[index]!;
+    if (!explicitCommands.has(command.from) || !command.terminal) continue;
+    const next = blocks[index + (command.terminal.output ? 2 : 1)];
+    if (!next?.terminal || !explicitCommands.has(next.from) ||
+        !adjacent.has(command.terminal.output?.from ?? command.from)) continue;
+    command.terminal.session = command.terminal.session === 'last' ? 'middle' : 'first';
+    next.terminal.session = 'last';
   }
   const diagnostics = blocks.flatMap((block) =>
     isCodeBlockEnabled(block, settings)

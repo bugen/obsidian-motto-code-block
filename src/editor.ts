@@ -6,7 +6,7 @@ import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
-import { commandPromptSymbol, splitCommands, type CommandRange } from './commands';
+import { formatCommandPrompt, splitCommands, type CommandPrompt, type CommandRange } from './commands';
 import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
@@ -53,6 +53,7 @@ class HeaderWidget extends WidgetType {
       this.block.terminal?.user === other.block.terminal?.user &&
       this.block.terminal?.host === other.block.terminal?.host &&
       this.block.terminal?.cwd === other.block.terminal?.cwd &&
+      this.block.terminal?.promptDisplay === other.block.terminal?.promptDisplay &&
       Boolean(this.block.terminal) === Boolean(other.block.terminal) &&
       this.settings.commandBlocks === other.settings.commandBlocks &&
       this.settings.showIcon === other.settings.showIcon && this.settings.showLanguage === other.settings.showLanguage &&
@@ -124,7 +125,7 @@ class ExpandWidget extends WidgetType {
 class CommandWidget extends WidgetType {
   readonly from: number;
   readonly text: string | null;
-  readonly prompt: string;
+  readonly prompt: CommandPrompt;
   readonly output: boolean;
   readonly open: boolean;
   readonly partial: boolean;
@@ -132,7 +133,7 @@ class CommandWidget extends WidgetType {
   readonly tapMyHippo: boolean;
 
   constructor(
-    from: number, text: string | null, prompt: string, output: boolean, open: boolean, partial: boolean,
+    from: number, text: string | null, prompt: CommandPrompt, output: boolean, open: boolean, partial: boolean,
     styles: MottoSettings['outputToggleStyles'], tapMyHippo: boolean,
   ) {
     super();
@@ -147,7 +148,9 @@ class CommandWidget extends WidgetType {
   }
 
   private sameContent(other: CommandWidget): boolean {
-    return this.from === other.from && this.text === other.text && this.prompt === other.prompt &&
+    return this.from === other.from && this.text === other.text &&
+      this.prompt.symbol === other.prompt.symbol && this.prompt.inlineContext === other.prompt.inlineContext &&
+      this.prompt.tooltip === other.prompt.tooltip &&
       this.output === other.output;
   }
 
@@ -374,13 +377,15 @@ function decorate(
     if (terminal) {
       decorations.push(Decoration.line({ class: 'motto-command-start' }).range(block.from));
       const commands = splitCommands(block.text, block.language);
-      const prompt = commandPromptSymbol(block.language, terminal.user);
+      const prompt = formatCommandPrompt(block.language, terminal);
       const output = terminal.output;
       const outputState = outputs.get(block.from);
       const open = outputState?.open === true;
       const outputPreview = output && outputState ? outputPreviewLineCount(output, outputState) : undefined;
       const partialOutput = open && outputPreview !== undefined;
       const count = preview ?? block.lineCount;
+      const promptWidth = prompt.inlineContext
+        ? `--motto-command-prompt-width: ${Array.from(prompt.inlineContext + prompt.symbol).length}ch;` : '';
       const lastCommand = commands[commands.length - 1];
       let commandIndex = 0;
       let command: CommandRange | undefined = commands[0];
@@ -396,7 +401,7 @@ function decorate(
         decorations.push(Decoration.line({ attributes: {
           class: `motto-command-line${wrap === undefined ? '' : wrap ? ' motto-command-wrap' : ' motto-command-nowrap'}` +
             (withToggle ? ` ${outputToggleClasses(settings.outputToggleStyles)}` : ''),
-          style: `--motto-command-tools-width: ${withToggle ? '68px' : '36px'}`,
+          style: `${promptWidth}--motto-command-tools-width: ${withToggle ? '68px' : '36px'}`,
         } }).range(from));
         if (wrap === false && from < to) {
           commandScrolls.push(Decoration.mark({ class: 'motto-command-scroll' }).range(from, to));
@@ -419,7 +424,7 @@ function decorate(
       }
       if (output) {
         if (commands.length === 0) decorations.push(Decoration.widget({
-          widget: new CommandWidget(block.from, null, '', true, open, partialOutput,
+          widget: new CommandWidget(block.from, null, prompt, true, open, partialOutput,
             settings.outputToggleStyles, settings.tapMyHippo),
           block: true, side: -1,
         }).range(output.from));

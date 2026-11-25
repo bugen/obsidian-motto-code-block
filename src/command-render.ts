@@ -1,7 +1,8 @@
-import { loadPrism, Notice, setIcon } from 'obsidian';
+import { loadPrism, Notice, setIcon, setTooltip } from 'obsidian';
 import { ansiText, renderAnsi } from './ansi';
 import { copyCode, createExpandFooter } from './render';
 import type { CodeBlock } from './codeblock';
+import type { CommandPrompt } from './commands';
 import { COLOR_MODES, type MottoSettings, type OutputToggleIcon } from './settings';
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import hippoIcon from './hippo.svg';
@@ -9,12 +10,23 @@ import { replyToHippo, updateHippoSpeech } from './hippo-speech';
 import { createEl, createFragment } from './dom';
 
 export function commandPrompt(
-  document: Document, symbol: string, toggleWrap: () => void,
+  document: Document, { symbol, inlineContext, tooltip }: CommandPrompt, toggleWrap: () => void,
 ): HTMLButtonElement {
   const prompt = createEl(document, 'button');
   prompt.type = 'button';
   prompt.className = 'motto-command-prompt';
-  prompt.textContent = symbol;
+  if (inlineContext) {
+    const context = prompt.createSpan();
+    context.className = 'motto-command-prompt-context';
+    context.textContent = inlineContext;
+  }
+  const marker = prompt.createSpan();
+  marker.className = 'motto-command-prompt-symbol';
+  marker.textContent = symbol;
+  if (tooltip) {
+    setTooltip(marker, tooltip, { placement: 'top', delay: 100, classes: ['motto-prompt-tooltip'], gap: 8 });
+    prompt.setAttribute('aria-description', tooltip);
+  }
   prompt.setAttribute('aria-label', 'Toggle command wrapping');
   prompt.addEventListener('click', (event) => {
     event.stopPropagation();

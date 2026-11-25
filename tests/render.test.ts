@@ -4,7 +4,7 @@ import { URL as NodeURL } from 'node:url';
 import * as obsidian from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseCodeBlocks, parseInfo } from '../src/codeblock';
-import { ansiPreview, commandOutput, commandOutputPreview, commandTools, outputToggleClasses, setOutputToggle } from '../src/command-render';
+import { ansiPreview, commandOutput, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle } from '../src/command-render';
 import { createEl, createFragment } from '../src/dom';
 import { languages } from '../src/languages';
 import { applyHeaderStyles, createExpandFooter, createHeader, languagePresentation, setHeaderFoldState } from '../src/render';
@@ -17,6 +17,22 @@ afterEach(() => {
 });
 
 describe('header display', () => {
+  it('requests a quick themed tooltip directly above the prompt symbol without a duplicate browser tooltip', () => {
+    const setTooltip = vi.spyOn(obsidian, 'setTooltip');
+    const context = 'user@host:~/work';
+    const button = commandPrompt(document, { symbol: '$', inlineContext: context, tooltip: `${context}$` }, vi.fn());
+    const symbol = button.querySelector('.motto-command-prompt-symbol');
+    expect(symbol?.textContent).toBe('$');
+    expect(setTooltip).toHaveBeenCalledExactlyOnceWith(symbol, `${context}$`, expect.objectContaining({
+      placement: 'top', delay: expect.any(Number), classes: ['motto-prompt-tooltip'],
+    }));
+    expect(Number(setTooltip.mock.calls[0]?.[2]?.delay)).toBeLessThanOrEqual(150);
+    expect(button.querySelector('[title]')).toBeNull();
+    expect(button.hasAttribute('title')).toBe(false);
+    expect(button.getAttribute('aria-label')).toBe('Toggle command wrapping');
+    expect(button.getAttribute('aria-description')).toBe(`${context}$`);
+  });
+
   it.each(['text', 'json', 'xml'])('renders and copies %s output literally without ANSI stripping or HTML interpretation', async (language) => {
     const text = '\x1b[31m<img src=x onerror=alert(1)>\x1b[0m\nlast line';
     const block = parseCodeBlocks(`\`\`\`${language}\n${text}\n\`\`\``).blocks[0]!;

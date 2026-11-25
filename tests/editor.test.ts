@@ -45,6 +45,74 @@ afterEach(() => {
 });
 
 describe('live preview headers', () => {
+  it('keeps adjacent commands separate while preserving inline prompts and output controls', () => {
+    const doc = [
+      'Intro', '',
+      '```bash cmd prompt:"demo@server:~" prompt-display:inline', 'pwd', '```',
+      '```ansi', '/home/demo', '```',
+      '```bash cmd prompt:"demo@server:~/work" prompt-display:inline title:Files', 'ls', '```',
+      '', '```bash cmd', 'date', '```',
+    ].join('\n');
+    const { view } = fixture(true, doc);
+    const commands = () => [...view.dom.querySelectorAll<HTMLElement>('.motto-command-line')];
+    expect([...view.dom.querySelectorAll('.motto-command-prompt')].map((prompt) => prompt.textContent))
+      .toEqual(['demo@server:~$', 'demo@server:~/work$', '$']);
+    expect(view.dom.querySelectorAll('.motto-command-header')).toHaveLength(1);
+    expect(view.dom.querySelector('.motto-command-context')).toBeNull();
+    const sourceLines = () => [...view.contentDOM.querySelectorAll('.cm-line')].map((line) => line.textContent);
+    const initialLines = sourceLines();
+    expect(initialLines.filter((line) => line === '```')).toHaveLength(3);
+    expect(initialLines).toContain('```bash cmd prompt:"demo@server:~/work" prompt-display:inline title:Files');
+    view.dispatch({ selection: { anchor: doc.indexOf('\nls') + 1 } });
+    expect(sourceLines()).toEqual(initialLines);
+
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    commands()[1]!.querySelector<HTMLButtonElement>('[aria-label="Copy command"]')!.click();
+    expect(write).toHaveBeenLastCalledWith('ls');
+    commands()[0]!.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('/home/demo');
+    expect(view.dom.querySelector('[data-command-session]')).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it('lets the user enter a command in an empty second block in the same session', () => {
+    const doc = ['```bash cmd', 'ls', '```', '```bash cmd', '```'].join('\n');
+    const { view } = fixture(true, doc);
+    const sourceLines = () => [...view.contentDOM.querySelectorAll('.cm-line')].map((line) => line.textContent);
+    view.dispatch({ selection: { anchor: view.state.doc.line(2).from } });
+    expect(sourceLines().filter((text) => text === '```bash cmd')).toHaveLength(2);
+    expect(sourceLines().filter((text) => text === '```')).toHaveLength(2);
+
+    const closing = view.state.doc.line(5).from;
+    view.dispatch({ selection: { anchor: closing } });
+    view.dispatch(view.state.replaceSelection('pwd\n'));
+    expect(sourceLines().filter((text) => text === '```bash cmd')).toHaveLength(2);
+    expect([...view.contentDOM.querySelectorAll('.motto-command-line')].map((line) => line.textContent))
+      .toEqual(['$ls', '$pwd']);
+    expect(view.state.doc.toString()).toBe(doc.slice(0, closing) + 'pwd\n' + doc.slice(closing));
+  });
+
+  it('reserves inline prompt space only in inline mode and updates the tooltip when metadata changes', () => {
+    const doc = '```powershell cmd cwd:"C:/a/very/long/directory" prompt-display:hide\nGet-Location\n```';
+    const { view } = fixture(true, doc);
+    const prompt = () => view.dom.querySelector<HTMLButtonElement>('.motto-command-prompt')!;
+    const hoverText = () => prompt().querySelector('.motto-command-prompt-symbol')?.getAttribute('aria-label');
+    const promptWidth = () => prompt().closest<HTMLElement>('.cm-line')!.style.getPropertyValue('--motto-command-prompt-width');
+    expect(prompt().textContent).toBe('>');
+    expect(hoverText()).toBe('C:/a/very/long/directory>');
+    expect(promptWidth()).toBe('');
+    expect(view.dom.querySelector('.motto-header')).toBeNull();
+
+    const changedPath = doc.indexOf('directory');
+    view.dispatch({ changes: { from: changedPath, to: changedPath + 'directory'.length, insert: 'elsewhere' } });
+    expect(hoverText()).toBe('C:/a/very/long/elsewhere>');
+    const mode = view.state.doc.toString().indexOf('hide');
+    view.dispatch({ changes: { from: mode, to: mode + 'hide'.length, insert: 'inline' } });
+    expect(prompt().querySelector('.motto-command-prompt-context')?.textContent).toBe('C:/a/very/long/elsewhere');
+    expect(prompt().lastElementChild?.textContent).toBe('>');
+    expect(promptWidth()).toBe('25ch');
+  });
+
   it('still folds blocks and toggles output on older CodeMirror hosts without scrollSnapshot', () => {
     const doc = 'Intro\n\n```js fold\nrun()\n```\n\n```sh\npwd\n```\n```plaintext\n/work\n```';
     const { view } = fixture(true, doc);

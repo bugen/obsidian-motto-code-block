@@ -279,7 +279,7 @@ export class ReadingHeaders {
         output = new ReadingOutputView(pre, mount.block, expand);
         mount.layout = output;
       }
-      output.setOpen(state.open && owner.foldState === 'expanded', preview, expand);
+      output.setOpen(state.open && owner.foldState === 'expanded', preview, expand, owner.block.terminal?.session);
       return;
     }
     if (settings.commandBlocks && mount.block.terminal?.output) {
@@ -301,7 +301,10 @@ export class ReadingHeaders {
       mount.foldOverride = undefined;
     }
     pre.classList.toggle('motto-code-block', mount.header !== null);
-    if (mount.header) pre.before(mount.header);
+    if (mount.header) {
+      if (mount.block.terminal?.session) mount.header.dataset.commandSession = mount.block.terminal.session;
+      pre.before(mount.header);
+    }
     this.renderBody(pre, mount);
   }
 
@@ -317,6 +320,9 @@ export class ReadingHeaders {
         mount.header?.querySelector<HTMLButtonElement>('.motto-header-toggle')?.focus({ preventScroll: true });
       }) : null;
     if (mount.expandFooter) pre.after(mount.expandFooter);
+    if (mount.expandFooter && mount.block.terminal?.session) {
+      mount.expandFooter.dataset.commandSession = mount.block.terminal.session;
+    }
     if (settings.commandBlocks && mount.block.terminal) {
       const output = mount.block.terminal.output;
       const outputState = mount.outputState;

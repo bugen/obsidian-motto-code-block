@@ -1,8 +1,22 @@
+import type { TerminalContext } from './codeblock';
+
 export const DEFAULT_COMMAND_LANGUAGES = ['sh', 'bash', 'zsh', 'csh', 'fish', 'powershell'] as const;
 
-export function commandPromptSymbol(language: string, user?: string): string {
-  if (language === 'powershell') return '>';
-  return user === 'root' ? '#' : '$';
+export interface CommandPrompt {
+  symbol: string;
+  inlineContext: string;
+  tooltip: string;
+}
+
+export function formatCommandPrompt(language: string, terminal?: TerminalContext): CommandPrompt {
+  const symbol = language === 'powershell' ? '>' : terminal?.user === 'root' ? '#' : '$';
+  const identity = [terminal?.user, terminal?.host].filter(Boolean).join('@');
+  const context = [identity, terminal?.cwd].filter(Boolean).join(':');
+  return {
+    symbol,
+    inlineContext: terminal?.promptDisplay === 'inline' ? context : '',
+    tooltip: context && terminal?.promptDisplay ? `${context}${symbol}` : '',
+  };
 }
 
 export interface CommandRange {

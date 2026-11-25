@@ -1,5 +1,5 @@
-import type { CodeBlock } from './codeblock';
-import { commandPromptSymbol, splitCommands } from './commands';
+import type { CodeBlock, CommandSessionPosition } from './codeblock';
+import { formatCommandPrompt, splitCommands } from './commands';
 import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, setOutputToggle } from './command-render';
 import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
@@ -34,7 +34,8 @@ export class ReadingCommandView {
     view.classList.toggle('motto-command-output-open', this.outputState?.open === true && foldState === 'expanded');
     view.hidden = foldState === 'folded' || pre.hidden;
     pre.before(view);
-    const prompt = commandPromptSymbol(block.language, block.terminal?.user);
+    const prompt = formatCommandPrompt(block.language, block.terminal);
+    if (block.terminal?.session) view.dataset.commandSession = block.terminal.session;
     const render = () => {
       const text = (code.textContent ?? '').replaceAll('\r\n', '\n');
       if (text !== block.text && text !== `${block.text}\n`) {
@@ -55,6 +56,7 @@ export class ReadingCommandView {
         if (command.from >= cutoff) continue;
         const row = view.createDiv();
         row.className = 'motto-command-row';
+        row.classList.toggle('motto-command-inline-prompt', Boolean(prompt.inlineContext));
         row.classList.toggle('motto-command-wrap', wrappedCommands.has(command.from));
         row.append(commandPrompt(document, prompt, () => {
           if (row.classList.toggle('motto-command-wrap')) wrappedCommands.add(command.from);
@@ -122,7 +124,7 @@ export class ReadingOutputView {
     pre.classList.add('motto-command-native');
   }
 
-  setOpen(open: boolean, preview: number | undefined, expand: () => void): void {
+  setOpen(open: boolean, preview: number | undefined, expand: () => void, session?: CommandSessionPosition): void {
     this.expand = expand;
     if (this.view && this.preview !== preview) {
       this.view.destroy();
@@ -134,7 +136,11 @@ export class ReadingOutputView {
       this.view = commandOutputPreview(this.pre.ownerDocument, this.block, preview, () => { this.expand(); });
       this.pre.before(this.view.element);
     }
-    if (this.view) this.view.element.hidden = !open || this.pre.hidden;
+    if (this.view) {
+      if (session) this.view.element.dataset.commandSession = session;
+      else delete this.view.element.dataset.commandSession;
+      this.view.element.hidden = !open || this.pre.hidden;
+    }
   }
 
   destroy(): void {
