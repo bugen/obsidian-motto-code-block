@@ -4,7 +4,7 @@ import { copyCode, createExpandFooter, createHeader, setHeaderFoldState } from '
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import type { FoldState, MottoSettings } from './settings';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
-import { ReadingCommandView, ReadingOutputView } from './command-reading';
+import { ReadingCommandView, ReadingOutputView, matchesReadingCode } from './command-reading';
 import { ansiPreview } from './command-render';
 import { splitCommands } from './commands';
 import { ReadingSessionMenu, type SessionOutputAction, type SessionPromptMode } from './session-menu';
@@ -65,7 +65,8 @@ export class ReadingHeaders {
     const pres = [
       ...(element.matches('pre') ? [element] : []),
       ...element.querySelectorAll<HTMLElement>('pre'),
-    ].filter((pre) => pre.querySelector(':scope > code') && !pre.closest('.motto-command-view, .motto-ansi-view'));
+    ].filter((pre) => !pre.closest('.motto-command-view, .motto-ansi-view') &&
+      (pre.querySelector(':scope > code') || !pre.textContent?.trim()));
     if (pres.length === 0) return;
     const source = previewSource ?? await this.readSource(context.sourcePath);
     if (this.disposed || source === undefined) return;
@@ -84,16 +85,18 @@ export class ReadingHeaders {
       }
       const existing = this.mounts.get(pre);
       if (existing?.document === document) used.delete(existing.block.from);
-      const code = pre.querySelector<HTMLElement>(':scope > code')!;
-      const section = context.getSectionInfo(code);
+      const code = pre.querySelector<HTMLElement>(':scope > code');
+      const section = (code && context.getSectionInfo(code)) ?? context.getSectionInfo(pre);
       if (!section) {
         console.warn(`[Motto Code Block] Source positions unavailable for a code block in "${context.sourcePath}".`);
         continue;
       }
-      const text = (code.textContent ?? '').replaceAll('\r\n', '\n');
+      const text = code?.textContent ?? undefined;
       const block = result.blocks.find((candidate) =>
         !used.has(candidate.from) && candidate.startLine >= section.lineStart && candidate.endLine <= section.lineEnd &&
-        (text === candidate.text || text === `${candidate.text}\n`));
+        // Without a code element, a blank pre needs an exact source range before it can claim a command.
+        (code || (candidate.startLine === section.lineStart && candidate.endLine === section.lineEnd)) &&
+        matchesReadingCode(candidate, text));
       if (!block) {
         existing?.child.unload();
         continue;

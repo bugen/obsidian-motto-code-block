@@ -127,6 +127,30 @@ describe('terminal transcript parsing', () => {
       .toEqual({ error: 'all-commands-ignored' });
   });
 
+  it.each([true, false])('pairs a prompt without a command with its own output (keep ANSI=%s)', (keepAnsi) => {
+    const prompt = '(PROD) [demo@node ~]$';
+    const finalOutput = '\x1b[32mlogout\x1b[0m';
+    const parsed = entries([
+      `${prompt} qstat`, 'job-ID  name', '    42  demo',
+      `${prompt}  `, finalOutput,
+    ].join('\r\n'));
+    const { blocks, diagnostics } = parseCodeBlocks(formatTerminalTranscript(parsed, keepAnsi));
+    expect(diagnostics).toEqual([]);
+    expect(blocks.filter((block) => block.terminal).map((block) => [
+      block.text, block.terminal?.promptText, block.terminal?.output?.language, block.terminal?.output?.text,
+    ])).toEqual([
+      ['qstat', prompt, keepAnsi ? 'ansi' : 'plaintext', 'job-ID  name\n    42  demo'],
+      ['', prompt, keepAnsi ? 'ansi' : 'plaintext', keepAnsi ? finalOutput : 'logout'],
+    ]);
+  });
+
+  it('omits empty prompts with no output and leaves unprompted logout lines with the running command', () => {
+    const parsed = entries('$ echo logout\nlogout\n$\n\n$ pwd\n/work\n$\n');
+    expect(parsed.map(({ command, output }) => [command, output])).toEqual([
+      ['echo logout', ['logout']], ['pwd', ['/work']],
+    ]);
+  });
+
   it('reports invalid input and supports custom or injected prompt detectors without Obsidian', () => {
     expect(parseTerminalTranscript('output\n$ pwd')).toEqual({ error: 'missing-prompt' });
     expect(parseTerminalTranscript('(.venv) demo@host:~$\n')).toEqual({ error: 'missing-command' });

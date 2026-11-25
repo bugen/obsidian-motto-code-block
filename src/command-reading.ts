@@ -1,11 +1,17 @@
 import type { CodeBlock, CommandSessionPosition } from './codeblock';
-import { formatCommandPrompt, splitCommands } from './commands';
+import { formatCommandPrompt, splitCommands, type CommandRange } from './commands';
 import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, setOutputToggle } from './command-render';
 import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 import { outputPreviewLineCount, type OutputState } from './folding';
 import type { ReadingSessionMenu } from './session-menu';
+
+export function matchesReadingCode(block: CodeBlock, renderedText?: string): boolean {
+  const text = renderedText?.replaceAll('\r\n', '\n');
+  if (text === block.text || text === `${block.text}\n`) return true;
+  return Boolean(block.terminal?.output && !block.text.trim() && !text?.trim());
+}
 
 export class ReadingCommandView {
   private readonly pre: HTMLElement;
@@ -31,7 +37,6 @@ export class ReadingCommandView {
     this.expanded = foldState === 'expanded';
     this.tapMyHippo = tapMyHippo;
     const document = pre.ownerDocument;
-    const code = pre.querySelector<HTMLElement>(':scope > code')!;
     const view = this.view = createEl(document, 'div');
     view.className = `motto-command-view motto-command-spacing-${spacing}`;
     view.classList.toggle('motto-command-partial', preview !== undefined);
@@ -41,8 +46,8 @@ export class ReadingCommandView {
     const prompt = formatCommandPrompt(block.language, block.terminal);
     if (block.terminal?.session) view.dataset.commandSession = block.terminal.session;
     const render = () => {
-      const text = (code.textContent ?? '').replaceAll('\r\n', '\n');
-      if (text !== block.text && text !== `${block.text}\n`) {
+      const code = pre.querySelector<HTMLElement>(':scope > code');
+      if (!matchesReadingCode(block, code?.textContent ?? undefined)) {
         console.warn('[Motto Code Block] Command content changed; waiting for Markdown reprocessing.');
         destroyHippoSpeech(view);
         view.hidden = true;
@@ -56,33 +61,34 @@ export class ReadingCommandView {
         : block.text.split('\n').slice(0, preview).join('\n').length;
       destroyHippoSpeech(view);
       view.replaceChildren();
-      for (const [index, command] of commands.entries()) {
-        if (command.from >= cutoff) continue;
+      const renderRow = (command: CommandRange | undefined, first: boolean, toggleOutput?: () => void) => {
         const row = view.createDiv();
         row.className = 'motto-command-row';
-        row.classList.toggle('motto-command-inline-prompt', Boolean(prompt.inlineContext));
-        row.classList.toggle('motto-command-wrap', wrappedCommands.has(command.from));
-        row.append(commandPrompt(document, prompt, () => {
-          if (row.classList.toggle('motto-command-wrap')) wrappedCommands.add(command.from);
-          else wrappedCommands.delete(command.from);
-        }));
-        const commandPre = row.createEl('pre');
-        const commandCode = commandPre.createEl('code');
-        commandCode.className = code.className;
-        commandCode.append(cloneCodeRange(code, command.from, Math.min(command.to, cutoff)));
-        const tools = commandTools(document, block.text.slice(command.from, command.to),
-          this.outputState?.open === true, this.styles,
-          index === commands.length - 1 && command.to <= cutoff ? toggle : undefined, this.tapMyHippo, this.partialOutput);
+        if (command || toggleOutput) {
+          row.classList.toggle('motto-command-inline-prompt', Boolean(prompt.inlineContext));
+          row.classList.toggle('motto-command-wrap', command !== undefined && wrappedCommands.has(command.from));
+          row.append(commandPrompt(document, prompt, command ? () => {
+            if (row.classList.toggle('motto-command-wrap')) wrappedCommands.add(command.from);
+            else wrappedCommands.delete(command.from);
+          } : undefined));
+          const commandPre = row.createEl('pre');
+          if (command && code) {
+            const commandCode = commandPre.createEl('code');
+            commandCode.className = code.className;
+            commandCode.append(cloneCodeRange(code, command.from, Math.min(command.to, cutoff)));
+          } else commandPre.setAttribute('aria-hidden', 'true');
+        }
+        const text = command ? block.text.slice(command.from, command.to) : toggleOutput ? '' : null;
+        const tools = commandTools(document, text, this.outputState?.open === true, this.styles,
+          toggleOutput, this.tapMyHippo, this.partialOutput);
         row.append(tools);
-        if (index === 0) sessionMenu?.attach(view, tools);
+        if (first) sessionMenu?.attach(view, tools);
+      };
+      for (const [index, command] of commands.entries()) {
+        if (!code || command.from >= cutoff) continue;
+        renderRow(command, index === 0, index === commands.length - 1 && command.to <= cutoff ? toggle : undefined);
       }
-      if (commands.length === 0 && (toggle || sessionMenu)) {
-        const tools = commandTools(document, null, this.outputState?.open === true, this.styles,
-          toggle, this.tapMyHippo, this.partialOutput);
-        if (sessionMenu) tools.classList.add('motto-session-empty-tools');
-        view.append(tools);
-        sessionMenu?.attach(view, tools);
-      }
+      if (commands.length === 0 && (toggle || sessionMenu)) renderRow(undefined, true, toggle);
     };
     render();
     if (toggle) {
@@ -95,7 +101,7 @@ export class ReadingCommandView {
       });
     }
     this.observer = new MutationObserver(render);
-    this.observer.observe(code, { childList: true, characterData: true, subtree: true });
+    this.observer.observe(pre.querySelector(':scope > code') ?? pre, { childList: true, characterData: true, subtree: true });
   }
 
   private get partialOutput(): boolean {

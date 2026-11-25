@@ -7,7 +7,7 @@ import { shouldShowHeader, type FoldState, type MottoSettings } from './settings
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { formatCommandPrompt, splitCommands, type CommandPrompt, type CommandRange } from './commands';
-import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle, terminalDeleteButton } from './command-render';
+import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle, terminalDeleteButton, terminalEditButton } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 
@@ -157,6 +157,16 @@ class ExpandWidget extends WidgetType {
   }
 }
 
+interface EmptyCommandControls {
+  editAt?: number;
+  remove?: DeleteTerminalBlock;
+}
+
+function commandPromptStyle(prompt: CommandPrompt): string {
+  return prompt.inlineContext
+    ? `--motto-command-prompt-width: ${Array.from(prompt.inlineContext + prompt.symbol).length}ch;` : '';
+}
+
 class CommandWidget extends WidgetType {
   readonly from: number;
   readonly text: string | null;
@@ -166,10 +176,11 @@ class CommandWidget extends WidgetType {
   readonly partial: boolean;
   readonly styles: MottoSettings['outputToggleStyles'];
   readonly tapMyHippo: boolean;
+  private readonly emptyControls: EmptyCommandControls | undefined;
 
   constructor(
     from: number, text: string | null, prompt: CommandPrompt, output: boolean, open: boolean, partial: boolean,
-    styles: MottoSettings['outputToggleStyles'], tapMyHippo: boolean,
+    styles: MottoSettings['outputToggleStyles'], tapMyHippo: boolean, emptyControls?: EmptyCommandControls,
   ) {
     super();
     this.from = from;
@@ -180,13 +191,15 @@ class CommandWidget extends WidgetType {
     this.partial = partial;
     this.styles = styles;
     this.tapMyHippo = tapMyHippo;
+    this.emptyControls = emptyControls;
   }
 
   private sameContent(other: CommandWidget): boolean {
     return this.from === other.from && this.text === other.text &&
       this.prompt.symbol === other.prompt.symbol && this.prompt.inlineContext === other.prompt.inlineContext &&
       this.prompt.tooltip === other.prompt.tooltip &&
-      this.output === other.output;
+      this.output === other.output && this.emptyControls?.editAt === other.emptyControls?.editAt &&
+      this.emptyControls?.remove === other.emptyControls?.remove;
   }
 
   override eq(other: CommandWidget): boolean {
@@ -204,7 +217,7 @@ class CommandWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const document = view.dom.ownerDocument;
     const marker = createEl(document, 'span');
-    marker.className = this.text === null ? 'motto-command-empty-tools' : 'motto-command-marker';
+    marker.className = 'motto-command-marker';
     marker.contentEditable = 'false';
     if (this.text !== null) {
       marker.append(commandPrompt(document, this.prompt, () => {
@@ -216,11 +229,30 @@ class CommandWidget extends WidgetType {
             (whiteSpace ? whiteSpace !== 'pre' && whiteSpace !== 'nowrap' : view.lineWrapping));
         view.dispatch({ effects: changeCommandWrap.of({ from, wrap: !wrapping }) });
       }));
+    } else {
+      marker.append(commandPrompt(document, this.prompt));
     }
-    marker.append(commandTools(document, this.text, this.open, this.styles, this.output ? () => {
+    const tools = commandTools(document, this.text ?? '', this.open, this.styles, this.output ? () => {
       dispatchFoldClick(view, this.from, changeOutput.of({ from: this.from, action: 'toggle' }));
-    } : undefined, this.tapMyHippo, this.partial));
-    return marker;
+    } : undefined, this.tapMyHippo, this.partial);
+    marker.append(tools);
+    if (this.text !== null) return marker;
+
+    const row = createEl(document, 'div');
+    row.className = 'motto-command-line motto-command-empty-line';
+    row.contentEditable = 'false';
+    row.style.cssText = commandPromptStyle(this.prompt);
+    row.append(marker);
+    const { editAt, remove } = this.emptyControls ?? {};
+    if (editAt !== undefined) tools.prepend(terminalEditButton(document, 'Edit command source', () => {
+      view.dispatch({ selection: { anchor: editAt } });
+      view.focus();
+    }));
+    if (remove) {
+      row.classList.add('motto-command-delete-anchor');
+      row.append(terminalDeleteButton(document, deleteBlockLabel, () => { remove(view, this.from, 'block'); }));
+    }
+    return row;
   }
 
   override destroy(marker: HTMLElement): void {
@@ -442,14 +474,25 @@ function decorate(
       const outputPreview = output && outputState ? outputPreviewLineCount(output, outputState) : undefined;
       const partialOutput = open && outputPreview !== undefined;
       const count = preview ?? block.lineCount;
-      if (canRemoveBlock) {
+      const emptyPreview = output !== undefined && commands.length === 0 &&
+        !insideOutput(block, state, block.from + 1);
+      if (emptyPreview) {
+        // Exclude the opening boundary so toggling the output does not reveal the empty command's fences.
+        const editAt = block.lineCount === 0 ? state.doc.line(block.startLine + 1).to : bodyStart(block, state);
+        decorations.push(Decoration.replace({
+          block: true, widget: new CommandWidget(block.from, null, prompt, true, open, partialOutput,
+            settings.outputToggleStyles, settings.tapMyHippo, {
+              ...(!state.readOnly ? { editAt } : {}),
+              ...(canRemoveBlock ? { remove } : {}),
+            }),
+        }).range(block.from, block.to));
+      } else if (canRemoveBlock) {
         const first = commands[0];
         const anchor = first && first.startLine < count ? state.doc.line(block.startLine + first.startLine + 2).from : block.from;
         decorations.push(Decoration.line({ class: 'motto-command-delete-anchor' }).range(anchor));
         decorations.push(Decoration.widget({ widget: new DeleteCommandWidget(block.from, remove), side: -1 }).range(anchor));
       }
-      const promptWidth = prompt.inlineContext
-        ? `--motto-command-prompt-width: ${Array.from(prompt.inlineContext + prompt.symbol).length}ch;` : '';
+      const promptWidth = commandPromptStyle(prompt);
       const lastCommand = commands[commands.length - 1];
       let commandIndex = 0;
       let command: CommandRange | undefined = commands[0];
@@ -487,11 +530,6 @@ function decorate(
         }).range(state.doc.line(block.startLine + command.startLine + 2).from));
       }
       if (output) {
-        if (commands.length === 0) decorations.push(Decoration.widget({
-          widget: new CommandWidget(block.from, null, prompt, true, open, partialOutput,
-            settings.outputToggleStyles, settings.tapMyHippo),
-          block: true, side: -1,
-        }).range(output.from));
         if (!open || preview !== undefined) {
           decorations.push(Decoration.replace({ block: true }).range(output.from, output.to));
         } else if (insideOutput(output, state)) {

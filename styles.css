@@ -602,8 +602,9 @@ body .markdown-rendered .motto-ansi-view pre > button.copy-code-button {
   padding-block-end: 4px;
 }
 
-:is(.motto-command-row, .motto-command-marker) > button.motto-command-prompt {
+:is(.motto-command-row, .motto-command-marker) > .motto-command-prompt {
   display: flex;
+  justify-content: flex-start;
   min-width: 0;
   height: auto;
   min-height: 0;
@@ -614,9 +615,12 @@ body .markdown-rendered .motto-ansi-view pre > button.copy-code-button {
   background: transparent;
   box-shadow: none;
   color: var(--text-faint, var(--text-muted));
-  cursor: pointer;
   font: inherit;
   text-align: start;
+}
+
+button.motto-command-prompt {
+  cursor: pointer;
   user-select: none;
 }
 
@@ -694,6 +698,11 @@ button.motto-command-prompt:focus-visible {
   user-select: none;
 }
 
+.motto-command-row > .motto-command-tools {
+  grid-column: -2;
+  justify-self: end;
+}
+
 body:not(.theme-dark) .motto-output-wide-light,
 body.theme-dark .motto-output-wide-dark {
   --motto-output-toggle-width: 32px;
@@ -744,10 +753,11 @@ body.theme-dark .motto-output-wide-dark {
 .motto-session-menu-side .motto-session-menu svg.svg-icon { width: 22px; height: 22px; }
 :is(.motto-command-tools, .motto-output-tools, .motto-header-controls) > button.motto-command-button:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
 
-.motto-command-view > .motto-session-empty-tools {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 15px;
+.motto-command-tools > button.motto-command-copy:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.45;
+  cursor: default;
 }
 
 .motto-command-tools > button.motto-output-toggle {
@@ -977,10 +987,13 @@ body.theme-dark .motto-raw-copy > :nth-child(3) { color: #93c5fd; }
   pointer-events: none;
 }
 
-.markdown-source-view.mod-cm6 .cm-content > div.cm-line.motto-command-line {
+.markdown-source-view.mod-cm6 .cm-content > :is(div.cm-line, .motto-command-empty-line).motto-command-line {
   --motto-command-prompt-size: min(max(16px, var(--motto-command-prompt-width, 16px)), 40%);
   position: relative;
   min-height: 28px;
+}
+
+.markdown-source-view.mod-cm6 .cm-content > div.cm-line.motto-command-line {
   padding-inline-start: calc(var(--size-4-4, 16px) + var(--motto-command-prompt-size) + 12px);
   padding-inline-end: calc(var(--motto-command-tools-width, 36px) + var(--motto-output-toggle-extra-width, 0px));
 }
@@ -1093,11 +1106,25 @@ body.theme-dark .motto-raw-copy > :nth-child(3) { color: #93c5fd; }
   }
 }
 
-.markdown-source-view.mod-cm6 .cm-content > .motto-command-empty-tools {
-  display: flex;
-  justify-content: flex-end;
-  padding: 6px 15px;
+.markdown-source-view.mod-cm6 .cm-content > .motto-command-empty-line {
+  box-sizing: border-box;
+  border-radius: var(--code-radius, 6px);
   background: var(--code-background);
+  font-family: var(--font-monospace);
+  font-size: var(--code-size, 13px);
+  line-height: var(--line-height-normal, 1.5);
+}
+
+.motto-command-empty-line > .motto-command-marker { display: block; }
+
+.markdown-source-view.mod-cm6 .cm-content > .motto-header + .motto-command-empty-line {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+
+.markdown-source-view.mod-cm6 .cm-content > .motto-command-empty-line:has(.motto-output-toggle[aria-expanded="true"]) {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
 
 @media (max-width: 560px) {
@@ -1106,5 +1133,4 @@ body.theme-dark .motto-raw-copy > :nth-child(3) { color: #93c5fd; }
   .motto-command-context { order: 1; flex: 0 0 100%; padding: 4px 15px 8px; }
   .motto-command-row { grid-template-columns: 16px minmax(0, 1fr); gap: 8px 12px; }
   .motto-command-row.motto-command-inline-prompt { grid-template-columns: fit-content(40%) minmax(0, 1fr); }
-  .motto-command-row > .motto-command-tools { grid-column: 2; justify-self: end; }
 }

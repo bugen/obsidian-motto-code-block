@@ -715,11 +715,14 @@ describe('reading mode headers', () => {
     const settings = parseSettings({
       tapMyHippo: true, outputToggleStyles: { light: { icon: 'hippo' } },
     });
-    const { renderer, context, updateSettings } = fixture(`\`\`\`sh\n${command}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``, settings);
+    const { renderer, context, updateSettings } = fixture(`\`\`\`sh cmd prompt-text:"demo@node:~$" prompt-display:hide\n${command}\n\`\`\`\n\`\`\`ansi\n/srv\n\`\`\``, settings);
     const shell = block(command, 'sh');
     const ansi = block('/srv', 'ansi');
     await renderer.process(shell.section, context);
     await renderer.process(ansi.section, context);
+    const prompt = shell.section.querySelector('.motto-command-prompt');
+    expect(prompt?.textContent).toBe('$');
+    expect(prompt?.getAttribute('aria-description')).toBe('demo@node:~$');
     const button = shell.section.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
     vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 200, 32, 24));
     await vi.advanceTimersByTimeAsync(5_000);
@@ -1620,6 +1623,49 @@ describe('reading mode headers', () => {
     await renderer.process(first.pre, context);
     expect(first.pre.previousElementSibling?.textContent).toBe('JavaScriptFirst');
     expect(second.pre.previousElementSibling?.textContent).toBe('JavaScriptSecond');
+  });
+
+  it.each(['whitespace', 'no code element'])('keeps empty commands and their output in a session (%s)', async (variant) => {
+    const source = [
+      '```bash cmd', 'date', '```',
+      '```bash cmd prompt-text:"demo@node:~$" prompt-display:hide', '```',
+      '```plaintext', 'logout', 'Connection to node closed.', '```',
+      '```bash cmd', 'pwd', '```',
+    ].join('\n');
+    const { renderer, context } = fixture(source);
+    const first = block('date', 'bash');
+    const empty = block('', 'bash');
+    const output = block('logout\nConnection to node closed.', 'plaintext');
+    const last = block('pwd', 'bash');
+    if (variant === 'no code element') empty.code.remove();
+    else empty.code.textContent = '\n \n';
+    const ranges = new Map<HTMLElement, readonly [number, number]>([
+      [first.code, [0, 2]], [empty.pre, [3, 4]], [output.code, [5, 8]], [last.code, [9, 11]],
+    ]);
+    context.getSectionInfo = (element) => {
+      const range = ranges.get(element);
+      return range ? { text: source, lineStart: range[0], lineEnd: range[1] } : null;
+    };
+
+    // The output may be mounted before its owner block.
+    for (const native of [first, output, empty, last]) await renderer.process(native.pre, context);
+
+    const command = empty.section.querySelector<HTMLElement>('.motto-command-view');
+    expect(command?.dataset.commandSession).toBe('middle');
+    expect(command?.querySelector('.motto-command-prompt')?.getAttribute('aria-description')).toBe('demo@node:~$');
+    const toggle = command!.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    const copy = toggle.nextElementSibling;
+    expect(copy?.matches('button.motto-command-copy:disabled')).toBe(true);
+    expect(copy?.querySelector('[data-icon="copy"]')).not.toBeNull();
+    expect(first.section.querySelector<HTMLButtonElement>('.motto-command-copy')?.disabled).toBe(false);
+    expect(empty.pre.classList.contains('motto-command-native')).toBe(true);
+    expect(output.pre.classList.contains('motto-command-native')).toBe(true);
+    expect(output.section.querySelector('.motto-command-output:not([hidden])')).toBeNull();
+    toggle.click();
+    const paired = output.section.querySelector<HTMLElement>('.motto-command-output:not([hidden])');
+    expect(paired?.dataset.commandSession).toBe('middle');
+    expect(paired?.querySelector('code')?.textContent).toBe('logout\nConnection to node closed.');
+    expect(last.section.querySelector('.motto-command-view')?.getAttribute('data-command-session')).toBe('last');
   });
 
   it('does not decorate indented or independently rendered code', async () => {

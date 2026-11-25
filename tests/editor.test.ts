@@ -954,16 +954,68 @@ describe('live preview headers', () => {
   });
 
   it('supports empty headerless commands and restores ordinary rendering when disabled', () => {
-    const doc = 'Intro\n\n```sh\n```\n```ansi\noutput\n```';
+    const doc = 'Intro\n\n```sh cmd prompt-text:"(PROD) [demo@node ~]$" prompt-display:hide\n```\n```ansi\nlogout\n```';
     const { view, updateSettings } = fixture(true, doc);
     expect(view.dom.querySelector('.motto-header, .motto-terminal-icon')).toBeNull();
-    expect(view.dom.querySelector('.motto-command-empty-tools')).not.toBeNull();
+    const prompt = view.dom.querySelector('.motto-command-empty-line .motto-command-prompt');
+    expect(prompt?.textContent).toBe('$');
+    expect(prompt?.getAttribute('aria-description')).toBe('(PROD) [demo@node ~]$');
     view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
-    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('output');
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('logout');
     updateSettings({ ...DEFAULT_SETTINGS, commandBlocks: false });
-    expect(view.dom.querySelector('.motto-command-empty-tools, .motto-command-output')).toBeNull();
-    expect(view.contentDOM.textContent).toContain('output');
+    expect(view.dom.querySelector('.motto-command-empty-line, .motto-command-output')).toBeNull();
+    expect(view.contentDOM.textContent).toContain('logout');
     expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it('aligns command prompts when the host centers button contents', () => {
+    const style = document.createElement('style');
+    style.textContent = `${readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8')}
+      button:not(.clickable-icon) { justify-content: center; }`;
+    document.head.append(style);
+    try {
+      const { view } = fixture(true, 'Intro\n\n```sh cmd\npwd\n```\n```sh cmd\n```\n```plaintext\nlogout\n```');
+      const normal = view.contentDOM.querySelector('button.motto-command-prompt');
+      const empty = view.contentDOM.querySelector('.motto-command-empty-line span.motto-command-prompt');
+      expect(normal?.textContent).toBe('$');
+      expect(empty?.textContent).toBe('$');
+      expect(getComputedStyle(normal!).justifyContent).toBe('flex-start');
+      expect(getComputedStyle(empty!).justifyContent).toBe('flex-start');
+    } finally {
+      style.remove();
+    }
+  });
+
+  it.each(['', '\n'])('hides the empty command fences until the command is edited (%j blank body)', (body) => {
+    const info = '```bash cmd prompt-text:"demo@node:~$" prompt-display:hide';
+    const doc = `Intro\n\n${info}\n${body}\`\`\`\n\`\`\`plaintext\nlogout\n\`\`\`\n\nTail`;
+    const { view } = fixture(true, doc);
+    const row = () => view.contentDOM.querySelector('.motto-command-empty-line');
+    const edit = () => row()?.querySelector<HTMLButtonElement>('[aria-label="Edit command source"]');
+    const sourceVisible = () => view.contentDOM.textContent?.includes(info);
+    expect(row()?.querySelector('.motto-command-prompt')?.textContent).toBe('$');
+    expect(sourceVisible()).toBe(false);
+    expect(view.contentDOM.textContent).not.toContain('```');
+    expect(row()?.querySelector('button.motto-terminal-delete')).not.toBeNull();
+    const toggle = row()!.querySelector<HTMLButtonElement>('.motto-output-toggle')!;
+    const copy = toggle.nextElementSibling;
+    expect(copy?.matches('button.motto-command-copy:disabled')).toBe(true);
+    expect(copy?.querySelector('[data-icon="copy"]')).not.toBeNull();
+    toggle.click();
+    expect(view.contentDOM.querySelector('.motto-command-output code')?.textContent).toBe('logout');
+    expect(sourceVisible()).toBe(false);
+
+    edit()!.click();
+    expect(row()).toBeNull();
+    expect(sourceVisible()).toBe(true);
+    expect(view.state.doc.toString()).toBe(doc);
+    view.dispatch({ selection: { anchor: 0 } });
+    expect(sourceVisible()).toBe(false);
+    edit()!.click();
+    view.dispatch(view.state.replaceSelection(body ? 'pwd' : '\npwd'));
+    expect(view.contentDOM.querySelector('.motto-command-line')?.textContent).toContain('pwd');
+    expect(view.contentDOM.querySelector<HTMLButtonElement>('.motto-command-line .motto-command-copy')?.disabled).toBe(false);
+    expect(view.contentDOM.querySelector('.motto-command-output code')?.textContent).toBe('logout');
   });
 
   it('updates visibility with modes and fence parameters without hiding headerless code', () => {

@@ -10,10 +10,9 @@ import { replyToHippo, updateHippoSpeech } from './hippo-speech';
 import { createEl, createFragment } from './dom';
 
 export function commandPrompt(
-  document: Document, { symbol, inlineContext, tooltip }: CommandPrompt, toggleWrap: () => void,
-): HTMLButtonElement {
-  const prompt = createEl(document, 'button');
-  prompt.type = 'button';
+  document: Document, { symbol, inlineContext, tooltip }: CommandPrompt, toggleWrap?: () => void,
+): HTMLElement {
+  const prompt = createEl(document, toggleWrap ? 'button' : 'span');
   prompt.className = 'motto-command-prompt';
   if (inlineContext) {
     const context = prompt.createSpan();
@@ -27,11 +26,14 @@ export function commandPrompt(
     setTooltip(marker, tooltip, { placement: 'top', delay: 100, classes: ['motto-prompt-tooltip'], gap: 8 });
     prompt.setAttribute('aria-description', tooltip);
   }
-  prompt.setAttribute('aria-label', 'Toggle command wrapping');
-  prompt.addEventListener('click', (event) => {
-    event.stopPropagation();
-    toggleWrap();
-  });
+  if (toggleWrap) {
+    prompt.setAttribute('type', 'button');
+    prompt.setAttribute('aria-label', 'Toggle command wrapping');
+    prompt.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleWrap();
+    });
+  }
   return prompt;
 }
 
@@ -65,6 +67,19 @@ export function terminalDeleteButton(document: Document, label: string, remove: 
   button.addEventListener('click', (event) => {
     event.stopPropagation();
     if (button.isConnected) remove();
+  });
+  return button;
+}
+
+export function terminalEditButton(document: Document, label: string, edit: () => void): HTMLButtonElement {
+  const button = createEl(document, 'button');
+  button.className = 'motto-command-button';
+  button.type = 'button';
+  button.setAttribute('aria-label', label);
+  setIcon(button, 'pencil');
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    edit();
   });
   return button;
 }
@@ -143,7 +158,11 @@ export function commandTools(
       toggle();
     });
   }
-  if (text !== null) tools.append(commandCopyButton(document, text, 'Copy command'));
+  if (text !== null) {
+    const copy = commandCopyButton(document, text, 'Copy command');
+    copy.disabled = text === '';
+    tools.append(copy);
+  }
   return tools;
 }
 
@@ -179,15 +198,7 @@ export function commandOutput(
   tools.className = 'motto-output-tools';
   if (edit) {
     output.classList.add('motto-output-editable');
-    const button = tools.createEl('button');
-    button.className = 'motto-command-button';
-    button.type = 'button';
-    button.setAttribute('aria-label', 'Edit source');
-    setIcon(button, 'pencil');
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      edit();
-    });
+    tools.append(terminalEditButton(document, 'Edit source', edit));
   }
   if (remove) tools.append(terminalDeleteButton(document, 'Delete output only', remove));
   if (language === 'ansi') {

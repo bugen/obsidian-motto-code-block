@@ -24,10 +24,12 @@ export function parseTerminalTranscript(
   let prompt = first.prompt;
   let command = first.command.trim() ? [first.command] : [];
   let output: string[] = [];
-  let continued = command.length > 0 && continuesCommand(first.command, prompt.language);
+  let hasOutput = false;
+  let seenCommand = command.length > 0;
+  let continued = seenCommand && continuesCommand(first.command, prompt.language);
   let ignored = false;
   const flush = () => {
-    if (command.length === 0) return;
+    if (command.length === 0 && !hasOutput) return;
     const text = command.join('\n');
     const input = text.trimEnd();
     if (ignoredCommandSuffixes.some((suffix) =>
@@ -48,17 +50,19 @@ export function parseTerminalTranscript(
       continue;
     }
     const next = detect(line, reference);
-    if (next?.command.trim()) {
+    if (next) {
       flush();
       prompt = next.prompt;
       if (!next.approximate) reference = prompt;
-      command = [next.command];
+      command = next.command.trim() ? [next.command] : [];
       output = [];
-      continued = continuesCommand(next.command, prompt.language);
-    } else if (command.length > 0) {
-      if (next && i === lines.length - 1) break;
+      hasOutput = false;
+      seenCommand ||= command.length > 0;
+      continued = command.length > 0 && continuesCommand(next.command, prompt.language);
+    } else if (seenCommand) {
       output.push(raw);
-    } else if (!next && line.trim()) {
+      hasOutput ||= line.trim().length > 0;
+    } else if (line.trim()) {
       return { error: 'output-before-command' };
     }
   }
@@ -75,7 +79,7 @@ function fence(info: string, body: string): string {
   const tilde = info.includes('`');
   for (const match of body.matchAll(tilde ? /~{3,}/g : /`{3,}/g)) length = Math.max(length, match[0].length + 1);
   const mark = (tilde ? '~' : '`').repeat(length);
-  return `${mark}${info}\n${body}\n${mark}`;
+  return `${mark}${info}\n${body ? `${body}\n` : ''}${mark}`;
 }
 
 export function formatTerminalTranscript(entries: readonly TranscriptEntry[], keepAnsi: boolean): string {
