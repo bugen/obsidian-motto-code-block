@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettin
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 import { outputPreviewLineCount, type OutputState } from './folding';
-import type { ReadingSessionMenu } from './session-menu';
+import type { SessionMenu } from './session-menu';
 
 export function matchesReadingCode(block: CodeBlock, renderedText?: string): boolean {
   const text = renderedText?.replaceAll('\r\n', '\n');
@@ -28,7 +28,7 @@ export class ReadingCommandView {
     foldState: FoldState, preview: number | undefined,
     outputState: OutputState | undefined, toggle?: () => void,
     tapMyHippo = false, spacing: CommandSpacing = DEFAULT_SETTINGS.commandSpacing,
-    sessionMenu?: ReadingSessionMenu,
+    sessionMenu?: SessionMenu,
   ) {
     this.pre = pre;
     this.styles = styles;

@@ -7,7 +7,7 @@ import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, 
 import { ReadingCommandView, ReadingOutputView, matchesReadingCode } from './command-reading';
 import { ansiPreview } from './command-render';
 import { splitCommands } from './commands';
-import { ReadingSessionMenu, type SessionOutputAction, type SessionPromptMode } from './session-menu';
+import { forcesPromptHeader, SessionMenu, withSessionPrompt, type SessionOutputAction, type SessionPromptMode } from './session-menu';
 
 interface SessionState {
   outputAction?: SessionOutputAction;
@@ -32,7 +32,7 @@ interface Mount {
   layout: { destroy(): void } | null;
   outputState: OutputState | undefined;
   wrappedCommands: Set<number>;
-  sessionMenu?: ReadingSessionMenu;
+  sessionMenu?: SessionMenu;
 }
 
 interface NoteFolds {
@@ -161,8 +161,8 @@ export class ReadingHeaders {
     return from === undefined ? undefined : mount.document.sessions.get(from);
   }
 
-  private createSessionMenu(pre: HTMLElement, mount: Mount): ReadingSessionMenu {
-    return new ReadingSessionMenu(pre.ownerDocument, () => {
+  private createSessionMenu(pre: HTMLElement, mount: Mount): SessionMenu {
+    return new SessionMenu(pre.ownerDocument, () => {
       const from = mount.block.terminal?.sessionFrom;
       if (from === undefined) return;
       const blocks = parseCodeBlocks(mount.document.source, this.getSettings()).blocks
@@ -180,7 +180,6 @@ export class ReadingHeaders {
       return {
         hasCommands: commands.length > 0,
         hasOutputs: blocks.some((block) => block.terminal?.output),
-        promptMode: this.sessionFor(mount)?.prompt,
         changeOutputs: (action) => act((state) => {
           state.outputAction = action;
           if (action === 'open-outputs') state.expandOutputOwners = true;
@@ -409,9 +408,7 @@ export class ReadingHeaders {
     } else mount.outputState = undefined;
     mount.foldState = resolveFoldState(mount.block, settings, mount.foldOverride);
     const prompt = this.sessionFor(mount)?.prompt;
-    const terminal = mount.block.terminal;
-    const showPromptHeader = prompt === 'header' && Boolean(terminal?.promptText || terminal?.user || terminal?.host || terminal?.cwd);
-    mount.header = createHeader(pre.ownerDocument, this.displayBlock(mount), showPromptHeader
+    mount.header = createHeader(pre.ownerDocument, withSessionPrompt(mount.block, prompt), forcesPromptHeader(mount.block, prompt)
       ? { ...settings, headerDisplay: 'always' } : settings, hasFoldableHeader(mount.block, settings) ? {
       state: mount.foldState,
       toggle: () => this.preserveScroll(pre, () => {
@@ -434,16 +431,6 @@ export class ReadingHeaders {
     this.renderBody(pre, mount);
   }
 
-  private displayBlock(mount: Mount): CodeBlock {
-    const prompt = this.sessionFor(mount)?.prompt;
-    const block = mount.block;
-    if (!prompt || !block.terminal) return block;
-    const terminal = { ...block.terminal };
-    if (prompt === 'header') delete terminal.promptDisplay;
-    else terminal.promptDisplay = prompt;
-    return { ...block, terminal };
-  }
-
   private renderBody(pre: HTMLElement, mount: Mount): void {
     const settings = this.getSettings();
     mount.layout?.destroy();
@@ -464,7 +451,8 @@ export class ReadingHeaders {
       const outputState = mount.outputState;
       if (mount.block.terminal.session === 'first') mount.sessionMenu ??= this.createSessionMenu(pre, mount);
       const folded = mount.foldState === 'folded';
-      mount.layout = new ReadingCommandView(pre, this.displayBlock(mount), mount.wrappedCommands, settings.outputToggleStyles,
+      mount.layout = new ReadingCommandView(pre, withSessionPrompt(mount.block, this.sessionFor(mount)?.prompt),
+        mount.wrappedCommands, settings.outputToggleStyles,
         mount.foldState, preview, outputState,
         output && outputState ? () => this.preserveScroll(pre, () => {
           Object.assign(outputState, nextOutputState(output, outputState));

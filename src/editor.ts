@@ -2,8 +2,8 @@ import { EditorSelection, MapMode, Prec, StateEffect, StateField, Text, type Edi
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
 import { editorInfoField, editorLivePreviewField, Notice, type Editor } from 'obsidian';
 import { encodeAnsiSource, hasAnsiControls } from './ansi-text';
-import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
-import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState } from './render';
+import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, updatePromptDisplayInfo, type CodeBlock } from './codeblock';
+import { applyHeaderStyles, copyCode, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
@@ -11,6 +11,7 @@ import { formatCommandPrompt, splitCommands, type CommandPrompt, type CommandRan
 import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle, terminalDeleteButton, terminalEditButton } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
+import { forcesPromptHeader, SessionMenu, withSessionPrompt, type SessionMenuActions, type SessionOutputAction, type SessionPromptMode } from './session-menu';
 
 interface HeaderState {
   livePreview: boolean;
@@ -18,6 +19,8 @@ interface HeaderState {
   folds: Map<number, FoldState>;
   overrides: Map<number, FoldState>;
   outputs: Map<number, OutputState>;
+  pendingOutputResets: Set<number>;
+  sessionPrompts: Map<number, SessionPromptMode>;
   ansiEditing: Set<number>;
   commandWraps: Map<number, boolean>;
   decorations: DecorationSet;
@@ -28,38 +31,68 @@ const toggleFold = StateEffect.define<number>();
 const changeOutput = StateEffect.define<{ from: number; action: 'toggle' | 'expand' }>();
 const changeCommandWrap = StateEffect.define<{ from: number; wrap: boolean }>();
 const changeNoteFolds = StateEffect.define<NoteFoldAction>();
+const changeSessionOutputs = StateEffect.define<{ from: number; action: SessionOutputAction }>();
+const changeSessionPrompt = StateEffect.define<{ from: number; mode: SessionPromptMode | null }>();
 
 type DeleteTerminalBlock = (view: EditorView, commandFrom: number, scope: 'block' | 'output') => void;
+type GetSessionActions = (view: EditorView, from: number) => SessionMenuActions | undefined;
 const deleteBlockLabel = 'Delete command block and its output';
+const applyPromptEvent = 'motto.apply-session-prompt';
+const editorSessionMenus = new WeakMap<HTMLElement, { menu: SessionMenu; controls: HTMLElement }>();
 
-function measureDeleteButtonPlacement(view: EditorView): void {
+function mountSessionMenu(
+  host: HTMLElement, controls: HTMLElement, view: EditorView, from: number, getActions: GetSessionActions,
+): void {
+  const menu = new SessionMenu(host.ownerDocument, () => getActions(view, from), () => {
+    view.contentDOM.querySelector<HTMLButtonElement>(`[data-motto-session-from="${from}"] .motto-session-menu`)
+      ?.focus({ preventScroll: true });
+  });
+  host.dataset.mottoSessionFrom = String(from);
+  menu.mount(controls);
+  editorSessionMenus.set(host, { menu, controls });
+}
+
+function measureTerminalControls(view: EditorView): void {
   view.requestMeasure({
-    key: measureDeleteButtonPlacement,
+    key: measureTerminalControls,
     read: ({ contentDOM, scrollDOM }) => {
-      const buttons = contentDOM.querySelectorAll<HTMLButtonElement>('.motto-command-delete-anchor > button.motto-terminal-delete');
+      const hosts = [...contentDOM.querySelectorAll<HTMLElement>('[data-motto-session-from]')];
       const frame = scrollDOM.getBoundingClientRect();
-      const document = scrollDOM.ownerDocument;
-      const left = Math.max(0, frame.left + scrollDOM.clientLeft);
-      const right = Math.min(document.documentElement.clientWidth, frame.left + scrollDOM.clientLeft + scrollDOM.clientWidth);
-      return [...buttons].map((button) => {
-        const line = button.parentElement!;
-        const bounds = line.getBoundingClientRect();
-        const rtl = document.defaultView?.getComputedStyle(line).direction === 'rtl';
-        const room = rtl ? bounds.left - left : right - bounds.right;
-        // A 28 px button plus a small buffer before the pane's clipping edge.
-        return { button, outside: bounds.width > 0 && right > left && room >= 30 };
+      const gutter = scrollDOM.querySelector('.cm-gutters')?.getBoundingClientRect();
+      const left = Math.max(0, frame.left + scrollDOM.clientLeft,
+        gutter && gutter.left < contentDOM.getBoundingClientRect().left ? gutter.right : 0);
+      const deletions = [...contentDOM.querySelectorAll<HTMLButtonElement>(
+        '.motto-command-delete-anchor > button.motto-terminal-delete',
+      )].map((button) => {
+        const anchor = button.parentElement!.getBoundingClientRect();
+        return { button, outside: anchor.width > 0 && anchor.left - left >= 30 };
       });
+      return { hosts, deletions };
     },
-    write: (placements) => {
-      for (const { button, outside } of placements) button.classList.toggle('motto-delete-outside', outside);
+    write: ({ hosts, deletions }) => {
+      for (const { button, outside } of deletions) button.classList.toggle('motto-delete-outside', outside);
+      for (const host of hosts) {
+        const mounted = editorSessionMenus.get(host);
+        if (mounted && host.isConnected) {
+          mounted.menu.attach(host.closest<HTMLElement>('.motto-command-menu-line') ?? host, mounted.controls, host);
+        }
+      }
     },
   });
 }
 
-function dispatchFoldClick(view: EditorView, from: number, effect: StateEffect<unknown>): void {
+function destroySessionMenu(host: HTMLElement): void {
+  editorSessionMenus.get(host)?.menu.destroy();
+  editorSessionMenus.delete(host);
+}
+
+function preserveScroll(view: EditorView, effect: StateEffect<unknown>): StateEffect<unknown>[] {
   // Keep the viewport from following the document bottom when a block changes height.
-  const effects = typeof view.scrollSnapshot === 'function' ? [effect, view.scrollSnapshot()] : [effect];
-  view.dispatch({ effects, selection: { anchor: from } });
+  return typeof view.scrollSnapshot === 'function' ? [effect, view.scrollSnapshot()] : [effect];
+}
+
+function dispatchFoldClick(view: EditorView, from: number, effect: StateEffect<unknown>): void {
+  view.dispatch({ effects: preserveScroll(view, effect), selection: { anchor: from } });
 }
 
 class HeaderWidget extends WidgetType {
@@ -67,13 +100,20 @@ class HeaderWidget extends WidgetType {
   readonly settings: MottoSettings;
   readonly foldState: FoldState;
   private readonly remove: DeleteTerminalBlock | undefined;
+  private readonly menu: GetSessionActions | undefined;
+  private readonly forceHeader: boolean;
 
-  constructor(block: CodeBlock, settings: MottoSettings, foldState: FoldState, remove?: DeleteTerminalBlock) {
+  constructor(
+    block: CodeBlock, settings: MottoSettings, foldState: FoldState, remove?: DeleteTerminalBlock,
+    menu?: GetSessionActions, forceHeader = false,
+  ) {
     super();
     this.block = block;
     this.settings = settings;
     this.foldState = foldState;
     this.remove = remove;
+    this.menu = menu;
+    this.forceHeader = forceHeader;
   }
 
   private sameContent(other: HeaderWidget): boolean {
@@ -86,6 +126,8 @@ class HeaderWidget extends WidgetType {
       this.block.terminal?.promptText === other.block.terminal?.promptText &&
       this.block.terminal?.promptDisplay === other.block.terminal?.promptDisplay &&
       Boolean(this.block.terminal) === Boolean(other.block.terminal) && this.remove === other.remove &&
+      this.menu === other.menu && (!this.menu || this.block.from === other.block.from) && this.forceHeader === other.forceHeader &&
+      hasFoldableHeader(this.block, this.settings) === hasFoldableHeader(other.block, other.settings) &&
       this.settings.commandBlocks === other.settings.commandBlocks &&
       this.settings.showIcon === other.settings.showIcon && this.settings.showLanguage === other.settings.showLanguage &&
       this.settings.showHeaderCopyButton === other.settings.showHeaderCopyButton;
@@ -104,21 +146,28 @@ class HeaderWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
-    const header = createHeader(view.dom.ownerDocument, this.block, this.settings, {
-      state: this.foldState,
-      toggle: (header) => {
-        const from = view.posAtDOM(header);
-        dispatchFoldClick(view, from, toggleFold.of(from));
-      },
-    });
+    const header = createHeader(view.dom.ownerDocument, this.block,
+      this.forceHeader ? { ...this.settings, headerDisplay: 'always' } : this.settings,
+      hasFoldableHeader(this.block, this.settings) ? {
+        state: this.foldState,
+        toggle: (header) => {
+          const from = view.posAtDOM(header);
+          dispatchFoldClick(view, from, toggleFold.of(from));
+        },
+      } : undefined);
     if (!header) throw new Error('[Motto Code Block] Cannot mount a disabled header.');
     const remove = this.remove;
     if (remove) {
-      header.querySelector('.motto-header-controls')?.prepend(terminalDeleteButton(view.dom.ownerDocument,
+      header.classList.add('motto-command-delete-anchor');
+      header.prepend(terminalDeleteButton(view.dom.ownerDocument,
         deleteBlockLabel, () => { remove(view, view.posAtDOM(header), 'block'); }));
     }
+    if (this.menu) mountSessionMenu(header, header.querySelector<HTMLElement>('.motto-header-controls')!, view,
+      this.block.from, this.menu);
     return header;
   }
+
+  override destroy(header: HTMLElement): void { destroySessionMenu(header); }
 }
 
 class LineNumberWidget extends WidgetType {
@@ -178,10 +227,12 @@ class CommandWidget extends WidgetType {
   readonly styles: MottoSettings['outputToggleStyles'];
   readonly tapMyHippo: boolean;
   private readonly emptyControls: EmptyCommandControls | undefined;
+  private readonly menu: GetSessionActions | undefined;
 
   constructor(
     from: number, text: string | null, prompt: CommandPrompt, output: boolean, open: boolean, partial: boolean,
     styles: MottoSettings['outputToggleStyles'], tapMyHippo: boolean, emptyControls?: EmptyCommandControls,
+    menu?: GetSessionActions,
   ) {
     super();
     this.from = from;
@@ -193,6 +244,7 @@ class CommandWidget extends WidgetType {
     this.styles = styles;
     this.tapMyHippo = tapMyHippo;
     this.emptyControls = emptyControls;
+    this.menu = menu;
   }
 
   private sameContent(other: CommandWidget): boolean {
@@ -200,7 +252,8 @@ class CommandWidget extends WidgetType {
       this.prompt.symbol === other.prompt.symbol && this.prompt.inlineContext === other.prompt.inlineContext &&
       this.prompt.tooltip === other.prompt.tooltip &&
       this.output === other.output && this.emptyControls?.editAt === other.emptyControls?.editAt &&
-      this.emptyControls?.remove === other.emptyControls?.remove;
+      this.emptyControls?.remove === other.emptyControls?.remove &&
+      Boolean(this.emptyControls) === Boolean(other.emptyControls) && this.menu === other.menu;
   }
 
   override eq(other: CommandWidget): boolean {
@@ -230,21 +283,24 @@ class CommandWidget extends WidgetType {
             (whiteSpace ? whiteSpace !== 'pre' && whiteSpace !== 'nowrap' : view.lineWrapping));
         view.dispatch({ effects: changeCommandWrap.of({ from, wrap: !wrapping }) });
       }));
-    } else {
+    } else if (this.emptyControls) {
       marker.append(commandPrompt(document, this.prompt));
     }
-    const tools = commandTools(document, this.text ?? '', this.open, this.styles, this.output ? () => {
+    const tools = commandTools(document, this.emptyControls ? '' : this.text, this.open, this.styles, this.output ? () => {
       dispatchFoldClick(view, this.from, changeOutput.of({ from: this.from, action: 'toggle' }));
     } : undefined, this.tapMyHippo, this.partial);
     marker.append(tools);
-    if (this.text !== null) return marker;
+    if (!this.emptyControls) {
+      if (this.menu) mountSessionMenu(marker, tools, view, this.from, this.menu);
+      return marker;
+    }
 
     const row = createEl(document, 'div');
     row.className = 'motto-command-line motto-command-empty-line';
     row.contentEditable = 'false';
     row.style.cssText = commandPromptStyle(this.prompt);
     row.append(marker);
-    const { editAt, remove } = this.emptyControls ?? {};
+    const { editAt, remove } = this.emptyControls;
     if (editAt !== undefined) tools.prepend(terminalEditButton(document, 'Edit command source', () => {
       view.dispatch({ selection: { anchor: editAt } });
       view.focus();
@@ -253,10 +309,12 @@ class CommandWidget extends WidgetType {
       row.classList.add('motto-command-delete-anchor');
       row.append(terminalDeleteButton(document, deleteBlockLabel, () => { remove(view, this.from, 'block'); }));
     }
+    if (this.menu) mountSessionMenu(row, tools, view, this.from, this.menu);
     return row;
   }
 
   override destroy(marker: HTMLElement): void {
+    destroySessionMenu(marker);
     destroyHippoSpeech(marker);
   }
 }
@@ -301,8 +359,9 @@ class OutputWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
+    const document = view.dom.ownerDocument;
     const remove = this.remove;
-    const preview = commandOutputPreview(view.dom.ownerDocument, this.block, this.preview, () => {
+    const preview = commandOutputPreview(document, this.block, this.preview, () => {
       dispatchFoldClick(view, this.commandFrom, changeOutput.of({ from: this.commandFrom, action: 'expand' }));
       view.focus();
     }, () => { editOutput(view, this.block); }, remove ? () => { remove(view, this.commandFrom, 'output'); } : undefined);
@@ -397,9 +456,22 @@ function commandEnd(block: CodeBlock, settings: MottoSettings): number {
   return settings.commandBlocks ? block.terminal?.output?.to ?? block.to : block.to;
 }
 
+function sessionMembers(blocks: CodeBlock[], from: number): CodeBlock[] {
+  return blocks.filter((block) => block.terminal?.sessionFrom === from);
+}
+
 function insideOutput(block: CodeBlock, state: EditorState, from = block.from): boolean {
   return state.selection.ranges.some(({ anchor, head }) =>
     (anchor >= from && anchor <= block.to) || (head >= from && head <= block.to));
+}
+
+function hidesEditingOutput(block: CodeBlock, state: EditorState, action: SessionOutputAction): boolean {
+  const output = block.terminal?.output;
+  if (!output || !insideOutput(output, state)) return false;
+  if (action === 'close-outputs') return true;
+  if (action !== 'reset-outputs') return false;
+  const defaults = initialOutputState(output);
+  return !defaults.open || outputPreviewLineCount(output, defaults) !== undefined;
 }
 
 function editingAnsiBlocks(
@@ -417,12 +489,13 @@ function editingAnsiBlocks(
 
 function outputStates(
   blocks: CodeBlock[], settings: MottoSettings, state: EditorState, previous = new Map<number, OutputState>(),
+  pendingResets = new Set<number>(),
 ): Map<number, OutputState> {
   const outputs = new Map<number, OutputState>();
   if (!settings.commandBlocks) return outputs;
   for (const block of blocks) {
     const output = block.terminal?.output;
-    if (output) outputs.set(block.from, insideOutput(output, state)
+    if (output) outputs.set(block.from, !pendingResets.has(block.from) && insideOutput(output, state)
       ? { open: true, fullyExpanded: true } : previous.get(block.from) ?? initialOutputState(output));
   }
   return outputs;
@@ -457,7 +530,7 @@ function foldedBlocks(
 function decorate(
   blocks: CodeBlock[], settings: MottoSettings, folds: Map<number, FoldState>, state: EditorState,
   outputs: Map<number, OutputState>, ansiEditing: Set<number>, commandWraps: Map<number, boolean>,
-  remove: DeleteTerminalBlock,
+  sessionPrompts: Map<number, SessionPromptMode>, remove: DeleteTerminalBlock, getSessionActions: GetSessionActions,
 ): Pick<HeaderState, 'decorations' | 'commandScrolls'> {
   const decorations: Range<Decoration>[] = [];
   const commandScrolls: Range<Decoration>[] = [];
@@ -465,12 +538,17 @@ function decorate(
     if (settings.commandBlocks && block.commandFrom !== undefined) continue;
     const foldState = folds.get(block.from) ?? 'expanded';
     const terminal = settings.commandBlocks ? block.terminal : undefined;
+    const menu = terminal?.session === 'first' ? getSessionActions : undefined;
+    const promptMode = terminal ? sessionPrompts.get(block.from) : undefined;
+    const display = withSessionPrompt(block, promptMode);
+    const forceHeader = forcesPromptHeader(block, promptMode);
     const canRemoveBlock = terminal && !state.readOnly && !block.unclosed && !terminal.output?.unclosed;
     const preview = foldState === 'partial' ? previewLineCount(block, settings) : undefined;
-    const hasHeader = shouldShowHeader(settings.headerDisplay, block.hasParameters);
+    const hasHeader = forceHeader || shouldShowHeader(settings.headerDisplay, block.hasParameters);
     if (hasHeader) {
       decorations.push(Decoration.widget({
-        widget: new HeaderWidget(block, settings, foldState, canRemoveBlock && foldState === 'folded' ? remove : undefined),
+        widget: new HeaderWidget(display, settings, foldState,
+          canRemoveBlock && foldState === 'folded' ? remove : undefined, foldState === 'folded' ? menu : undefined, forceHeader),
         block: true, side: -1,
       }).range(block.from));
       decorations.push(foldState === 'folded'
@@ -500,15 +578,18 @@ function decorate(
     if (terminal) {
       decorations.push(Decoration.line({ class: 'motto-command-start' }).range(block.from));
       const commands = splitCommands(block.text, block.language);
-      const prompt = formatCommandPrompt(block.language, terminal);
+      const prompt = formatCommandPrompt(block.language, display.terminal);
       const output = terminal.output;
       const outputState = outputs.get(block.from);
-      const open = outputState?.open === true;
-      const outputPreview = output && outputState ? outputPreviewLineCount(output, outputState) : undefined;
+      const editingOutput = output !== undefined && insideOutput(output, state);
+      const open = editingOutput || outputState?.open === true;
+      const outputPreview = output && outputState && !editingOutput ? outputPreviewLineCount(output, outputState) : undefined;
       const partialOutput = open && outputPreview !== undefined;
       const count = preview ?? block.lineCount;
       const emptyPreview = output !== undefined && commands.length === 0 &&
         !insideOutput(block, state, block.from + 1);
+      const first = commands[0];
+      const firstVisible = first !== undefined && first.startLine < count;
       if (emptyPreview) {
         // Exclude the opening boundary so toggling the output does not reveal the empty command's fences.
         const editAt = block.lineCount === 0 ? state.doc.line(block.startLine + 1).to : bodyStart(block, state);
@@ -517,13 +598,22 @@ function decorate(
             settings.outputToggleStyles, settings.tapMyHippo, {
               ...(!state.readOnly ? { editAt } : {}),
               ...(canRemoveBlock ? { remove } : {}),
-            }),
+            }, menu),
         }).range(block.from, block.to));
-      } else if (canRemoveBlock) {
-        const first = commands[0];
-        const anchor = first && first.startLine < count ? state.doc.line(block.startLine + first.startLine + 2).from : block.from;
-        decorations.push(Decoration.line({ class: 'motto-command-delete-anchor' }).range(anchor));
-        decorations.push(Decoration.widget({ widget: new DeleteCommandWidget(block.from, remove), side: -1 }).range(anchor));
+      } else {
+        if (canRemoveBlock) {
+          const anchor = firstVisible ? state.doc.line(block.startLine + first.startLine + 2).from : block.from;
+          decorations.push(Decoration.line({ class: 'motto-command-delete-anchor' }).range(anchor));
+          decorations.push(Decoration.widget({ widget: new DeleteCommandWidget(block.from, remove), side: -1 }).range(anchor));
+        }
+        if (menu && !firstVisible) {
+          decorations.push(Decoration.line({ class: 'motto-command-menu-line motto-command-menu-fence' }).range(block.from));
+          decorations.push(Decoration.widget({
+            widget: new CommandWidget(block.from, null, prompt, false, false, false,
+              settings.outputToggleStyles, settings.tapMyHippo, undefined, menu),
+            side: -1,
+          }).range(block.from));
+        }
       }
       const promptWidth = commandPromptStyle(prompt);
       const lastCommand = commands[commands.length - 1];
@@ -540,6 +630,7 @@ function decorate(
         const withToggle = output !== undefined && lastCommand?.startLine === line && lastCommand.endLine < count;
         decorations.push(Decoration.line({ attributes: {
           class: `motto-command-line${wrap === undefined ? '' : wrap ? ' motto-command-wrap' : ' motto-command-nowrap'}` +
+            (menu && first?.startLine === line ? ' motto-command-menu-line' : '') +
             (withToggle ? ` ${outputToggleClasses(settings.outputToggleStyles)}` : ''),
           style: `${promptWidth}--motto-command-tools-width: ${withToggle ? '68px' : '36px'}`,
         } }).range(from));
@@ -558,14 +649,14 @@ function decorate(
         decorations.push(Decoration.widget({
           widget: new CommandWidget(block.from, block.text.slice(command.from, command.to), prompt,
             output !== undefined && index === commands.length - 1 && command.endLine < count, open, partialOutput,
-            settings.outputToggleStyles, settings.tapMyHippo),
+            settings.outputToggleStyles, settings.tapMyHippo, undefined, index === 0 ? menu : undefined),
           side: -1,
         }).range(state.doc.line(block.startLine + command.startLine + 2).from));
       }
       if (output) {
         if (!open || preview !== undefined) {
           decorations.push(Decoration.replace({ block: true }).range(output.from, output.to));
-        } else if (insideOutput(output, state)) {
+        } else if (editingOutput) {
           for (let line = output.startLine; line <= output.endLine; line++) {
             decorations.push(Decoration.line({ class: 'motto-command-output-source' }).range(state.doc.line(line + 1).from));
           }
@@ -614,9 +705,10 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       const outputs = outputStates(blocks, settings, state);
       const ansiEditing = editingAnsiBlocks(blocks, settings, state);
       const commandWraps = new Map<number, boolean>();
+      const sessionPrompts = new Map<number, SessionPromptMode>();
       return {
-        livePreview, blocks, folds, overrides, outputs, ansiEditing, commandWraps,
-        ...decorate(blocks, settings, folds, state, outputs, ansiEditing, commandWraps, remove),
+        livePreview, blocks, folds, overrides, outputs, pendingOutputResets: new Set(), sessionPrompts, ansiEditing, commandWraps,
+        ...decorate(blocks, settings, folds, state, outputs, ansiEditing, commandWraps, sessionPrompts, remove, getSessionActions),
       };
     },
     update(previous, transaction) {
@@ -624,12 +716,41 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       const reparse = transaction.docChanged || livePreview !== previous.livePreview ||
         transaction.effects.some((effect) => effect.is(refresh));
       const bulkAction = transaction.effects.find((effect) => effect.is(changeNoteFolds))?.value;
-      if (!reparse && transaction.startState.readOnly === transaction.state.readOnly && !bulkAction && !transaction.effects.some((effect) =>
+      const sessionOutput = transaction.effects.find((effect) => effect.is(changeSessionOutputs))?.value;
+      const sessionPrompt = transaction.effects.find((effect) => effect.is(changeSessionPrompt))?.value;
+      if (!reparse && transaction.startState.readOnly === transaction.state.readOnly && !bulkAction && !sessionOutput && !sessionPrompt &&
+        !transaction.effects.some((effect) =>
         effect.is(toggleFold) || effect.is(changeOutput) || effect.is(changeCommandWrap)) &&
           !(transaction.selection && (previous.folds.size > 0 || previous.outputs.size > 0 ||
             previous.blocks.some((block) => block.language === 'ansi')))) return previous;
       const blocks = reparse ? readBlocks(livePreview, transaction.state.doc.toString()) : previous.blocks;
       const settings = getSettings();
+      const byFrom = new Map(blocks.map((block) => [block.from, block]));
+      const mapCommand = (block: CodeBlock) => {
+        const from = transaction.changes.mapPos(block.from, 1, MapMode.TrackAfter);
+        const candidate = from !== null ? byFrom.get(from) : undefined;
+        if (candidate?.terminal) return candidate;
+        // An opening fence can be replaced while its closing fence still identifies the same block.
+        const start = transaction.changes.mapPos(block.from, -1);
+        const end = transaction.changes.mapPos(block.to, -1, MapMode.TrackBefore);
+        const edited = byFrom.get(start);
+        return edited?.terminal && edited.to === end ? edited : undefined;
+      };
+      const sessionPrompts = new Map<number, SessionPromptMode>();
+      if (previous.sessionPrompts.size > 0) {
+        for (const block of previous.blocks) {
+          const mode = previous.sessionPrompts.get(block.from);
+          if (!mode) continue;
+          const candidate = mapCommand(block);
+          if (candidate) sessionPrompts.set(candidate.from, mode);
+        }
+      }
+      if (sessionPrompt) {
+        for (const block of sessionMembers(blocks, sessionPrompt.from)) {
+          if (sessionPrompt.mode === null) sessionPrompts.delete(block.from);
+          else sessionPrompts.set(block.from, sessionPrompt.mode);
+        }
+      }
       const commandWraps = new Map<number, boolean>();
       if (livePreview && settings.commandBlocks) {
         for (const [from, wrap] of previous.commandWraps) {
@@ -657,19 +778,36 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
           if (override) overrides.set(block.from, override);
         }
       }
+      const outputMembers = sessionOutput ? sessionMembers(blocks, sessionOutput.from) : [];
+      if (sessionOutput?.action === 'open-outputs') {
+        for (const block of outputMembers) {
+          const override = noteFoldOverride(block, settings, sessionOutput.action);
+          if (override) overrides.set(block.from, override);
+        }
+      }
       const folds = foldedBlocks(visibleBlocks, settings, transaction.state, overrides);
       const mappedOutputs = new Map<number, OutputState>();
+      const pendingOutputResets = new Set<number>();
+      const compareSource = transaction.docChanged && !transaction.isUserEvent(applyPromptEvent);
+      const changed = (before: CodeBlock, after: CodeBlock) => compareSource &&
+        transaction.changes.touchesRange(before.from, before.to) &&
+        transaction.startState.doc.sliceString(before.from, before.to) !== transaction.state.doc.sliceString(after.from, after.to);
       for (const block of previous.blocks) {
         const output = block.terminal?.output;
         const open = previous.outputs.get(block.from);
         if (!output || open === undefined) continue;
-        const from = transaction.changes.mapPos(block.from, 1, MapMode.TrackAfter);
-        const outputFrom = transaction.changes.mapPos(output.from, 1, MapMode.TrackAfter);
-        const outputTo = transaction.changes.mapPos(output.to, -1, MapMode.TrackBefore);
-        if (from !== null && blocks.some((candidate) =>
-          candidate.from === from && candidate.terminal?.output?.from === outputFrom &&
-          candidate.terminal.output.to === outputTo && candidate.terminal.output.fold === output.fold &&
-          candidate.terminal.output.previewLines === output.previewLines)) mappedOutputs.set(from, open);
+        const candidate = mapCommand(block);
+        const nextOutput = candidate?.terminal?.output;
+        if (!candidate || !nextOutput) continue;
+        const sameOutput = nextOutput.from === transaction.changes.mapPos(output.from, 1, MapMode.TrackAfter) &&
+          nextOutput.to === transaction.changes.mapPos(output.to, -1, MapMode.TrackBefore);
+        const reset = !sameOutput || changed(block, candidate) || changed(output, nextOutput) ||
+          nextOutput.fold !== output.fold || nextOutput.previewLines !== output.previewLines;
+        if (!reset) mappedOutputs.set(candidate.from, open);
+        // Keep the source visible while editing without saving the forced-open state over the reset.
+        if ((reset || previous.pendingOutputResets.has(block.from)) && insideOutput(nextOutput, transaction.state)) {
+          pendingOutputResets.add(candidate.from);
+        }
       }
       if (bulkAction === 'reset-folds') mappedOutputs.clear();
       else if (bulkAction) {
@@ -680,7 +818,15 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
           }
         }
       }
-      const outputs = outputStates(blocks, settings, transaction.state, mappedOutputs);
+      if (sessionOutput) {
+        for (const block of outputMembers) {
+          const output = block.terminal?.output;
+          if (output) mappedOutputs.set(block.from, sessionOutput.action === 'reset-outputs'
+            ? initialOutputState(output) : noteOutputOverride(sessionOutput.action));
+          pendingOutputResets.delete(block.from);
+        }
+      }
+      const outputs = outputStates(blocks, settings, transaction.state, mappedOutputs, pendingOutputResets);
       const mappedAnsiEditing = new Set<number>();
       for (const from of previous.ansiEditing) {
         const mapped = transaction.changes.mapPos(from, 1, MapMode.TrackAfter);
@@ -709,8 +855,8 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       }
       const ansiEditing = editingAnsiBlocks(blocks, settings, transaction.state, mappedAnsiEditing);
       return {
-        livePreview, blocks, folds, overrides, outputs, ansiEditing, commandWraps,
-        ...decorate(blocks, settings, folds, transaction.state, outputs, ansiEditing, commandWraps, remove),
+        livePreview, blocks, folds, overrides, outputs, pendingOutputResets, sessionPrompts, ansiEditing, commandWraps,
+        ...decorate(blocks, settings, folds, transaction.state, outputs, ansiEditing, commandWraps, sessionPrompts, remove, getSessionActions),
       };
     },
     provide: (field) => [
@@ -719,6 +865,62 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       Prec.lowest((EditorView.outerDecorations ?? EditorView.decorations).from(field, (value) => value.commandScrolls)),
     ],
   });
+  function getSessionActions(view: EditorView, from: number): SessionMenuActions | undefined {
+    const snapshot = view.state.doc;
+    const { blocks } = view.state.field(field);
+    const members = sessionMembers(blocks, from);
+    if (members.length === 0) return;
+    const commands = members.flatMap((block) =>
+      splitCommands(block.text, block.language).map((range) => block.text.slice(range.from, range.to)));
+    const run = (action: () => void) => {
+      const current = sessionMembers(view.state.field(field).blocks, from);
+      if (view.state.doc !== snapshot || current.length !== members.length ||
+        members.some((block, index) => block.from !== current[index]?.from)) {
+        new Notice('Motto Code Block: This terminal session has changed. Reopen its menu and try again.');
+        return;
+      }
+      action();
+    };
+    const writePrompt = (mode: SessionPromptMode) => run(() => {
+      if (view.state.readOnly) {
+        new Notice('Motto Code Block: This note is read-only.');
+        return;
+      }
+      const changes: { from: number; to: number; insert: string }[] = [];
+      for (const block of members) {
+        const range = block.infoRange;
+        const info = range && snapshot.sliceString(range.from, range.to);
+        const updated = info === undefined ? undefined : updatePromptDisplayInfo(info, mode);
+        if (!range || updated === undefined) {
+          new Notice('Motto Code Block: Could not update the terminal session. Check its opening fences.');
+          return;
+        }
+        if (updated !== info) changes.push({ ...range, insert: updated });
+      }
+      view.dispatch({
+        changes,
+        effects: preserveScroll(view, changeSessionPrompt.of({ from, mode: null })),
+        userEvent: applyPromptEvent,
+      });
+    });
+    return {
+      hasOutputs: members.some((block) => block.terminal?.output),
+      hasCommands: commands.length > 0,
+      changeOutputs: (action) => run(() => {
+        const affected = members.find((block) => hidesEditingOutput(block, view.state, action));
+        view.dispatch({
+          effects: preserveScroll(view, changeSessionOutputs.of({ from, action })),
+          ...(affected ? { selection: { anchor: affected.from } } : {}),
+        });
+      }),
+      changePrompt: (mode) => run(() => {
+        view.dispatch({ effects: preserveScroll(view, changeSessionPrompt.of({ from, mode })) });
+      }),
+      ...(!view.state.readOnly ? { writePrompt } : {}),
+      copyCommands: () => run(() => { void copyCode(view.dom.ownerDocument, commands.join('\n')); }),
+    };
+  }
+
   function remove(view: EditorView, commandFrom: number, scope: 'block' | 'output'): void {
     const state = view.state;
     const { blocks, livePreview } = state.field(field);
@@ -774,7 +976,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       ViewPlugin.define((view) => {
         views.add(view);
         const place = () => {
-          if (view.state.field(field).livePreview) measureDeleteButtonPlacement(view);
+          if (view.state.field(field).livePreview) measureTerminalControls(view);
         };
         view.scrollDOM.addEventListener('scroll', place, { passive: true });
         place();
@@ -805,12 +1007,8 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
           const fold = noteFoldOverride(block, settings, action) ??
             (action === 'reset-folds' ? resolveFoldState(block, settings) : 'expanded');
           if (hasFoldableHeader(block, settings) && hiddenBodyContainsSelection(block, settings, state, fold)) return true;
-          const output = block.terminal?.output;
-          if (!settings.commandBlocks || !output || !insideOutput(output, state)) return false;
-          if (action === 'close-outputs') return true;
-          if (action !== 'reset-folds') return false;
-          const defaults = initialOutputState(output);
-          return !defaults.open || outputPreviewLineCount(output, defaults) !== undefined;
+          return settings.commandBlocks && (action === 'close-outputs' || action === 'reset-folds') &&
+            hidesEditingOutput(block, state, action === 'reset-folds' ? 'reset-outputs' : action);
         });
         view.dispatch({
           effects: changeNoteFolds.of(action),

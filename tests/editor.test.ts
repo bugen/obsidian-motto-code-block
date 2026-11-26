@@ -2,13 +2,13 @@
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { EditorSelection, EditorState, StateEffect } from '@codemirror/state';
-import { EditorView, keymap, runScopeHandlers } from '@codemirror/view';
+import { EditorView, highlightActiveLine, keymap, runScopeHandlers } from '@codemirror/view';
 import { App, editorInfoField, editorLivePreviewField, type Editor } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ansiIcon from '../src/ansi.svg';
 import { createEditorHeaders } from '../src/editor';
 import { DEFAULT_SETTINGS, parseSettings, type MottoSettings } from '../src/settings';
-import { setLivePreview } from './obsidian';
+import { Menu, setLivePreview } from './obsidian';
 
 const views: EditorView[] = [];
 const source = 'Intro\n\n```ts file:main.ts\nconst n = 1;\n```\n\n```bash title:Install\nnpm install\n```';
@@ -38,11 +38,17 @@ function fixture(livePreview = true, doc = source, initialSettings: MottoSetting
 }
 
 afterEach(() => {
+  Menu.active?.hide();
   for (const view of views.splice(0)) view.destroy();
   document.body.replaceChildren();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
+
+function chooseSession(view: EditorView, title: string): void {
+  view.dom.querySelector<HTMLButtonElement>('.motto-session-menu')!.click();
+  Menu.active!.choose(title);
+}
 
 describe('pasting into ANSI fences', () => {
   function paste(view: EditorView, text: string): void {
@@ -90,6 +96,28 @@ describe('pasting into ANSI fences', () => {
 });
 
 describe('live preview headers', () => {
+  it('toggles the menu from its trigger even if Obsidian dismisses it before the click', () => {
+    const { view } = fixture(true, '```sh cmd\npwd\n```\n```sh cmd\nls\n```');
+    const button = view.dom.querySelector<HTMLButtonElement>('.motto-session-menu')!;
+    const click = () => {
+      button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    };
+    click();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+
+    document.addEventListener('pointerdown', () => { Menu.active?.hide(); }, { capture: true, once: true });
+    click();
+    expect(Menu.active).toBeUndefined();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+
+    click();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    button.click();
+    expect(Menu.active).toBeUndefined();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('keeps adjacent commands separate while preserving inline prompts and output controls', () => {
     const doc = [
       'Intro', '',
@@ -137,6 +165,113 @@ describe('live preview headers', () => {
     expect(view.state.doc.toString()).toBe(doc.slice(0, closing) + 'pwd\n' + doc.slice(closing));
   });
 
+  it('only changes one session and resets only the output paired with edited source', () => {
+    const doc = [
+      'Intro', '',
+      '```sh cmd fold', 'pwd', '```', '```ansi expand:1', 'first', 'second', '```',
+      '```sh cmd', 'date', '```', '```ansi expand:1', 'third', 'more', '```',
+      '', '```sh cmd', 'ls', '```', '```ansi expand', 'fourth', '```',
+      '```sh cmd', 'id', '```',
+    ].join('\n');
+    const { view, mount } = fixture(true, doc);
+    const split = mount().view;
+    const outputs = (editor = view) => [...editor.dom.querySelectorAll('.motto-command-output code')].map((node) => node.textContent);
+    expect(view.dom.querySelectorAll('.motto-session-menu')).toHaveLength(2);
+    expect(view.dom.querySelector('.motto-command-header .motto-session-menu')).not.toBeNull();
+    chooseSession(view, 'Open all outputs');
+    expect(outputs()).toEqual(['first\nsecond', 'third\nmore', 'fourth']);
+    expect(view.dom.querySelector('.motto-command-output-partial')).toBeNull();
+    expect(outputs(split)).toEqual(['third\nmore', 'fourth']);
+    expect(view.dom.querySelector('.motto-command-line .motto-session-menu')).not.toBeNull();
+    chooseSession(view, 'Reset output states');
+    expect(view.dom.querySelector('.motto-command-output-partial')).not.toBeNull();
+    chooseSession(view, 'Close all outputs');
+    expect(outputs()).toEqual(['fourth']);
+
+    view.dispatch({ changes: { from: 0, insert: 'Note\n\n' } });
+    expect(outputs()).toEqual(['fourth']);
+    const pwd = view.state.doc.toString().indexOf('pwd');
+    view.dispatch({ changes: { from: pwd, to: pwd + 3, insert: 'whoami' } });
+    expect(outputs()).toEqual(['first\nsecond', 'fourth']);
+    expect(view.dom.querySelector('.motto-command-output-partial')).not.toBeNull();
+
+    const third = view.state.doc.toString().indexOf('third');
+    view.dispatch({ selection: { anchor: third } });
+    view.dispatch(view.state.replaceSelection('edited '));
+    view.dispatch(view.state.replaceSelection('again '));
+    expect(view.dom.querySelector('.motto-command-output-source')?.textContent).toBe('```ansi expand:1');
+    expect(outputs()).toEqual(['first\nsecond', 'fourth']);
+    view.dispatch({ selection: { anchor: 0 } });
+    expect(outputs()).toEqual(['first\nsecond', 'edited again third\nmore', 'fourth']);
+    expect(view.dom.querySelectorAll('.motto-command-output-partial')).toHaveLength(2);
+  });
+
+  it('keeps temporary prompts on existing blocks through edits and session splits and merges', () => {
+    const first = '```sh cmd prompt:demo prompt-display:inline\npwd\n```';
+    const second = '```sh cmd prompt:demo prompt-display:inline\ndate\n```';
+    const { view, mount } = fixture(true, `${first}\n${second}`);
+    const split = mount().view;
+    const prompts = (editor = view) => [...editor.dom.querySelectorAll('.motto-command-prompt')].map((node) => node.textContent);
+    chooseSession(view, 'Prompt: Hide');
+    expect(prompts()).toEqual(['$', '$']);
+    expect(prompts(split)).toEqual(['demo$', 'demo$']);
+    expect(view.state.doc.toString()).toBe(`${first}\n${second}`);
+    const opening = first.indexOf('\n');
+    view.dispatch({ changes: { from: 0, to: opening, insert: '```SH cmd prompt:demo prompt-display:inline' } });
+    expect(prompts()).toEqual(['$', '$']);
+    view.dispatch({ changes: { from: first.length + 1, insert: '\n' } });
+    expect(view.dom.querySelector('.motto-session-menu')).toBeNull();
+    expect(prompts()).toEqual(['$', '$']);
+    view.dispatch({ changes: [
+      { from: first.length, to: first.length + 1 },
+      { from: view.state.doc.length, insert: `\n${second.replace('date', 'ls')}` },
+    ] });
+    expect(prompts()).toEqual(['$', '$', 'demo$']);
+    chooseSession(view, 'Prompt: Header');
+    expect([...view.dom.querySelectorAll('.motto-command-context')].map((node) => node.textContent))
+      .toEqual(['demo', 'demo', 'demo']);
+    view.dispatch({ effects: setLivePreview.of(false) });
+    view.dispatch({ effects: setLivePreview.of(true) });
+    expect(prompts()).toEqual(['demo$', 'demo$', 'demo$']);
+  });
+
+  it('applies the pencil to only the session fences in a single undoable Markdown change', () => {
+    const first = '> ~~~sh cmd title:"Literal prompt-display:hide" prompt:demo prompt-display = \'hide\'';
+    const second = '> ```sh cmd prompt:demo prompt-display:inline prompt-display:hide';
+    const outside = '```sh cmd prompt:demo prompt-display:hide\nid\n```';
+    const doc = [first, '> pwd', '> ~~~', '> ```ansi', '> result', '> ```', second, '> ls', '> ```', '', outside].join('\n');
+    const { view } = fixture(true, doc);
+    const edits: string[] = [];
+    view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of((update) => {
+      for (const transaction of update.transactions) {
+        if (transaction.docChanged) edits.push(transaction.changes.invert(transaction.startState.doc).apply(transaction.newDoc).toString());
+      }
+    })) });
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    chooseSession(view, 'Copy all commands');
+    expect(write).toHaveBeenLastCalledWith('pwd\nls');
+    chooseSession(view, 'Open all outputs');
+    chooseSession(view, 'Prompt: Header');
+    expect(view.state.doc.toString()).toBe(doc);
+    const apply = (mode: string) => {
+      view.dom.querySelector<HTMLButtonElement>('.motto-session-menu')!.click();
+      const prompts = Menu.active!.items.filter((item) => item.title.startsWith('Prompt: '));
+      expect(prompts.filter((item) => item.checked)).toEqual([]);
+      prompts.find((item) => item.title === `Prompt: ${mode}`)!.label!
+        .querySelector<HTMLButtonElement>('[aria-label="Write to all grouped blocks"]')!.click();
+    };
+    apply('Inline');
+    const inline = doc.replace("prompt-display = 'hide'", 'prompt-display:inline').replace('prompt-display:inline prompt-display:hide', 'prompt-display:inline');
+    expect(view.state.doc.toString()).toBe(inline);
+    expect(edits).toEqual([doc]);
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('result');
+    apply('Header');
+    expect(view.state.doc.toString()).toBe(inline
+      .replace(/(> ~~~[^\n]+|> ```sh[^\n]+) prompt-display:inline/g, '$1'));
+    expect(edits).toEqual([doc, inline]);
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('result');
+  });
+
   it.each([0, 1, 2])('deletes only the selected command fence and its output (session position %s)', (position) => {
     const groups = [
       '```bash cmd\npwd\n```\n```ansi\n/work\n```  ',
@@ -154,17 +289,15 @@ describe('live preview headers', () => {
     expect(view.dom.querySelectorAll('[aria-label="Delete command block and its output"]')).toHaveLength(2);
   });
 
-  it('deletes only the output beside its pencil and does not pair an unrelated following fence', () => {
+  it.each(['expand', 'expand:1'])('deletes only the %s output without pairing a following fence', (option) => {
     const command = '```bash cmd\nls\n```';
-    const paired = '```ansi expand\nfile\n```';
+    const paired = `\`\`\`ansi ${option}\nfile\nmore\n\`\`\``;
     const unrelated = '```plaintext\nstandalone\n```';
     const { view } = fixture(true, ['Intro', '', command, paired, unrelated, '', 'Tail'].join('\n'));
-    const pencil = view.dom.querySelector<HTMLButtonElement>('.motto-output-tools [aria-label="Edit source"]')!;
-    const button = pencil.nextElementSibling;
-    expect(button).toBeInstanceOf(HTMLButtonElement);
-    expect(button?.getAttribute('aria-label')).toBe('Delete output only');
-    if (!(button instanceof HTMLButtonElement)) throw new Error('Missing output deletion button');
-    button.click();
+    const button = view.dom.querySelector<HTMLButtonElement>('.motto-output-tools > [aria-label="Delete output only"]');
+    expect(button?.previousElementSibling?.getAttribute('aria-label')).toBe('Edit source');
+    expect(button?.nextElementSibling?.matches('.motto-raw-copy')).toBe(true);
+    button!.click();
     expect(view.state.doc.toString()).toBe(['Intro', '', command, '', unrelated, '', 'Tail'].join('\n'));
     expect(view.dom.querySelector('.motto-output-toggle, .motto-command-output')).toBeNull();
   });
@@ -187,39 +320,71 @@ describe('live preview headers', () => {
     expect(sourceMode.view.dom.querySelector('.motto-terminal-delete')).toBeNull();
   });
 
-  it('places the command deletion button outside the row only when it fits inside the pane', async () => {
+  it('keeps session menu placement through active-line changes and small fluctuations in gutter width', async () => {
     const style = document.createElement('style');
     style.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
     document.head.append(style);
     try {
-      const { view } = fixture(true, '```bash cmd\npwd\nls\n```');
+      const { view } = fixture(true, '```bash cmd\npwd\nls\n```\n```ansi expand\noutput\n```\n```bash cmd fold\nid\n```');
       const sourceView = document.createElement('div');
       sourceView.className = 'markdown-source-view mod-cm6';
       view.dom.before(sourceView);
       sourceView.append(view.dom);
       const [first, second] = [...view.contentDOM.querySelectorAll('.motto-command-line')];
-      const button = first!.querySelector('button.motto-terminal-delete')!;
-      let paneWidth = 540;
+      const buttons = [...view.contentDOM.querySelectorAll<HTMLButtonElement>('.motto-command-delete-anchor > button.motto-terminal-delete')];
+      let paneWidth = 550;
+      let paneLeft = 100;
       const clientWidth = (element: HTMLElement, width: () => number) => {
         Object.defineProperty(element, 'clientWidth', { configurable: true, get: width });
       };
       clientWidth(view.scrollDOM, () => paneWidth);
       clientWidth(document.documentElement, () => 1000);
-      vi.spyOn(view.scrollDOM, 'getBoundingClientRect').mockImplementation(() => new DOMRect(100, 50, paneWidth, 300));
+      vi.spyOn(view.scrollDOM, 'getBoundingClientRect').mockImplementation(() => new DOMRect(paneLeft, 50, paneWidth, 300));
       vi.spyOn(first!, 'getBoundingClientRect').mockReturnValue(new DOMRect(140, 80, 460, 28));
-      const measure = () => { view.scrollDOM.dispatchEvent(new Event('scroll')); };
-      measure();
-      await vi.waitFor(() => {
-        expect(getComputedStyle(button).insetInlineStart).toBe('100%');
+      const foldedHeader = view.contentDOM.querySelector('.motto-command-header')!;
+      vi.spyOn(foldedHeader, 'getBoundingClientRect').mockReturnValue(new DOMRect(140, 300, 460, 28));
+      const measure = () => new Promise<void>((resolve) => {
+        view.scrollDOM.dispatchEvent(new Event('scroll'));
+        view.requestMeasure({ read: () => undefined, write: () => { resolve(); } });
       });
-      expect(getComputedStyle(button).position).toBe('absolute');
+      const menu = view.dom.querySelector<HTMLButtonElement>('.motto-session-menu')!;
+      const marker = menu.closest('.motto-command-marker');
+      const placement = () => menu.closest('.motto-session-menu-side');
+      const assertGutter = (outside: boolean) => {
+        expect(buttons).toHaveLength(2);
+        for (const button of buttons) {
+          const buttonStyle = getComputedStyle(button);
+          expect(buttonStyle.position).toBe('absolute');
+          expect(buttonStyle.pointerEvents).toBe('auto');
+          expect(buttonStyle.left).toBe(outside ? '-30px' : '0px');
+        }
+      };
+      await measure();
+      expect(placement()).toBe(marker);
+      assertGutter(true);
+      view.dispatch({
+        effects: StateEffect.appendConfig.of(highlightActiveLine()),
+        selection: { anchor: view.state.doc.line(2).from },
+      });
+      expect(first!.classList.contains('cm-activeLine')).toBe(true);
+      expect(placement()).toBe(marker);
       expect(getComputedStyle(first!).paddingInlineStart).toBe(getComputedStyle(second!).paddingInlineStart);
-      expect(getComputedStyle(first!).paddingInlineEnd).toBe(getComputedStyle(second!).paddingInlineEnd);
-      paneWidth = 520;
-      measure();
-      await vi.waitFor(() => {
-        expect(getComputedStyle(button).insetInlineStart).toMatch(/^0(?:px)?$/);
-      });
+      paneWidth = 546;
+      await measure();
+      expect(placement()).toBe(marker);
+      paneWidth = 543;
+      await measure();
+      expect(placement()).toBeNull();
+      assertGutter(true);
+      paneWidth = 546;
+      await measure();
+      expect(placement()).toBeNull();
+      paneWidth = 548;
+      await measure();
+      expect(placement()).toBe(marker);
+      paneLeft = 140;
+      await measure();
+      assertGutter(false);
     } finally {
       Reflect.deleteProperty(document.documentElement, 'clientWidth');
       style.remove();
@@ -873,7 +1038,7 @@ describe('live preview headers', () => {
     view.dispatch({ changes: { from, to: from + 3, insert: 'whoami' } });
     view.dom.querySelector<HTMLButtonElement>('.motto-command-copy')!.click();
     expect(write).toHaveBeenLastCalledWith('whoami');
-    expect(view.dom.querySelector('.motto-output-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    expect(view.dom.querySelector('.motto-output-toggle')?.getAttribute('aria-expanded')).toBe('false');
     expect(view.state.doc.toString()).toBe(doc.replace('pwd', 'whoami'));
   });
 
@@ -1077,7 +1242,7 @@ describe('live preview headers', () => {
     view.dispatch(view.state.replaceSelection(body ? 'pwd' : '\npwd'));
     expect(view.contentDOM.querySelector('.motto-command-line')?.textContent).toContain('pwd');
     expect(view.contentDOM.querySelector<HTMLButtonElement>('.motto-command-line .motto-command-copy')?.disabled).toBe(false);
-    expect(view.contentDOM.querySelector('.motto-command-output code')?.textContent).toBe('logout');
+    expect(view.contentDOM.querySelector('.motto-command-output')).toBeNull();
   });
 
   it('updates visibility with modes and fence parameters without hiding headerless code', () => {
@@ -1590,16 +1755,21 @@ describe('live preview headers', () => {
     }
   });
 
-  it('keeps partial output gutters despite the native block-widget display rule', () => {
+  it('preserves ordinary and terminal block indentation with the native block-widget styles', () => {
     const style = document.createElement('style');
     style.textContent = `${readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8')}
       .markdown-source-view.mod-cm6 .cm-content > * {
-        margin: 0 !important;
+        margin: 0;
+        margin-left: 12px !important;
         display: block;
       }`;
     document.head.append(style);
     try {
-      const doc = 'Intro\n\n```sh\npwd\n```\n```ansi expand:2\nfirst\nsecond\nthird\n```';
+      const doc = [
+        '```python title:test.py', 'print(1)', '```', '',
+        '```sh title:Command', 'pwd', '```', '```ansi expand:2', 'first', 'second', 'third', '```', '',
+        '```sh cmd expand:1', 'ls', 'id', '```',
+      ].join('\n');
       const { view } = fixture(true, doc);
       const sourceView = document.createElement('div');
       sourceView.className = 'markdown-source-view mod-cm6';
@@ -1607,10 +1777,21 @@ describe('live preview headers', () => {
       sourceView.append(view.dom);
       const output = () => view.dom.querySelector<HTMLElement>('.motto-command-output')!;
       const toggle = () => view.dom.querySelector<HTMLButtonElement>('.motto-output-toggle')!.click();
-      expect(output().parentElement).toBe(view.contentDOM);
+      const command = view.contentDOM.querySelector('.motto-command-line')!;
+      const ordinary = view.contentDOM.querySelector('.motto-header:not(.motto-command-header)')!;
+      const header = view.contentDOM.querySelector('.motto-command-header')!;
+      const footer = view.contentDOM.querySelector(':scope > .motto-expand-footer')!;
+      const expectSameGutter = () => {
+        expect(output().parentElement).toBe(view.contentDOM);
+        for (const block of [command, header, footer, output()]) {
+          expect(getComputedStyle(block).marginLeft).toBe(getComputedStyle(ordinary).marginLeft);
+        }
+      };
+      expectSameGutter();
       expect(getComputedStyle(output()).display).toBe('grid');
       output().querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
       expect(output().classList.contains('motto-command-output-partial')).toBe(false);
+      expectSameGutter();
       toggle();
       expect(view.dom.querySelector('.motto-command-output')).toBeNull();
       toggle();

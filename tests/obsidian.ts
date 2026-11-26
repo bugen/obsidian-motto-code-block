@@ -73,11 +73,16 @@ export function setTooltip(element: HTMLElement, tooltip: string): void {
 
 class MenuItem {
   title = '';
+  label?: DocumentFragment;
   disabled = false;
   checked = false;
   click?: () => void;
 
-  setTitle(title: string): this { this.title = title; return this; }
+  setTitle(title: string | DocumentFragment): this {
+    this.title = typeof title === 'string' ? title : title.textContent ?? '';
+    this.label = typeof title === 'string' ? undefined : title;
+    return this;
+  }
   setDisabled(disabled: boolean): this { this.disabled = disabled; return this; }
   setChecked(checked: boolean): this { this.checked = checked; return this; }
   setIcon(): this { return this; }

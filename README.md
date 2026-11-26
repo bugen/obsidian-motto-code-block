@@ -41,9 +41,9 @@ Click a command's prompt to toggle line wrapping for that command, including any
 
 In Reading view, consecutive `cmd` blocks with no blank lines between them are displayed as one compact terminal session. Live Preview keeps them separate for editing. Each output still opens and closes independently. Insert a blank line after a command and its output to start a new session.
 
-Use the two-line menu icon beside the first command to open or close all outputs in that session, restore their fence defaults, switch prompt display, or copy all commands without prompts or output. When space is tight, the icon appears next to the command controls without the round background. These actions do not edit the note.
+In both views, use the two-line menu beside the first command to open or close all session outputs, restore their fence defaults, switch prompt display, or copy all commands without prompts or output. When space is tight, the icon moves next to the command controls. The prompt items change the display temporarily; in Live Preview, click the pencil next to a prompt item to apply it to the session's Markdown instead. Editing a command or its output resets only that pair's output visibility to its fence default.
 
-In Live Preview, use the trash icon beside the pencil to delete only the output. To delete the whole command block and its output, hover briefly over the first command line or focus its controls. The trash icon appears just outside the right edge, or in the left margin if the pane is too narrow. Both actions edit the note and can be undone with the editor's Undo command.
+In Live Preview, use the trash icon next to the pencil to delete only the output. The trash icon on the left of the command deletes the whole command block and its paired output. Hover over the left gutter or first command line, or focus its controls, to reveal it. If the pane has no room in the gutter, the icon appears just inside the left edge without moving the block. Both actions can be undone with the editor's Undo command.
 
 ![Command Block with shell commands and output](./screenshots/command_block_lvs.png)
 

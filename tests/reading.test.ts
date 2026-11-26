@@ -189,9 +189,9 @@ describe('reading mode headers', () => {
     const width = vi.spyOn(pane, 'clientWidth', 'get').mockReturnValue(1000);
     const getRect = HTMLElement.prototype.getBoundingClientRect;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.matches('.motto-command-view')) return new DOMRect(100, 50, 500, 48);
+      if (this.matches('.motto-command-view')) return new DOMRect(100, 50, 500, 40);
       if (this.matches('.motto-session-menu')) {
-        return this.closest('.motto-session-menu-side') ? new DOMRect(606, 58, 34, 34) : new DOMRect(561, 62, 24, 24);
+        return this.closest('.motto-session-menu-side') ? new DOMRect(606, 51, 38, 38) : new DOMRect(561, 62, 24, 24);
       }
       return getRect.call(this);
     });
@@ -202,11 +202,15 @@ describe('reading mode headers', () => {
     expect(pane.querySelector('.motto-header')).toBeNull();
     expect(button.closest('.motto-session-menu-side')).not.toBeNull();
     button.click();
-    expect(Menu.active?.position).toMatchObject({ x: 606, y: 58, width: 34 });
+    expect(Menu.active?.position).toMatchObject({ x: 606, y: 51, width: 38 });
     expect(Menu.active?.items.find((item) => item.title === 'Open all outputs')?.disabled).toBe(true);
     Menu.active?.hide();
 
-    width.mockReturnValue(643);
+    width.mockReturnValue(648);
+    await renderer.process(first.section, context);
+    expect(button.closest('.motto-session-menu-side')).not.toBeNull();
+
+    width.mockReturnValue(647);
     await renderer.process(first.section, context);
     expect(button.closest('.motto-session-menu-side')).toBeNull();
     expect(button.previousElementSibling?.getAttribute('aria-label')).toBe('Copy command');

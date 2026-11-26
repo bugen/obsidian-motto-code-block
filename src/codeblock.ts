@@ -29,6 +29,7 @@ export interface CodeBlock {
   exclude?: boolean;
   unclosed?: true;
   terminal?: TerminalBlock;
+  infoRange?: { from: number; to: number };
   commandFrom?: number;
   headerStyle?: string;
   fold?: boolean;
@@ -50,6 +51,78 @@ export interface Diagnostic {
   message: string;
 }
 
+function infoLanguage(info: string): { language: string; optionsFrom: number } {
+  const trimmed = info.trimStart();
+  const languageMatch = /^([^\s:=]+)(?=\s|$)/.exec(trimmed);
+  const firstToken = languageMatch?.[1]?.toLowerCase() ?? '';
+  const language = foldOptions.has(firstToken) || firstToken === 'exclude' ? '' : firstToken;
+  return { language, optionsFrom: info.length - trimmed.length + (language ? languageMatch![0].length : 0) };
+}
+
+function* infoOptions(info: string, index: number) {
+  while (index < info.length) {
+    const space = index;
+    while (index < info.length && /\s/.test(info[index]!)) index++;
+    if (index === info.length) break;
+    const from = index;
+    while (index < info.length && !/[\s:=]/.test(info[index]!)) index++;
+    const keyEnd = index;
+    const key = info.slice(from, keyEnd).toLowerCase();
+    while (index < info.length && /\s/.test(info[index]!)) index++;
+    if (info[index] !== ':' && info[index] !== '=') {
+      index = keyEnd;
+      yield { key, space, from, to: keyEnd, value: undefined, unclosed: false };
+      continue;
+    }
+    index++;
+    while (index < info.length && /\s/.test(info[index]!)) index++;
+    const quote = info[index];
+    let value = '';
+    if (quote === '"' || quote === "'") {
+      index++;
+      while (index < info.length && info[index] !== quote) {
+        const char = info[index++]!;
+        if (char === '\\' && (info[index] === quote || info[index] === '\\')) {
+          value += info[index++]!;
+        } else value += char;
+      }
+      if (info[index] !== quote) {
+        yield { key, space, from, to: index, value, unclosed: true };
+        break;
+      }
+      index++;
+    } else {
+      const valueStart = index;
+      while (index < info.length && !/\s/.test(info[index]!)) index++;
+      value = info.slice(valueStart, index);
+    }
+    yield { key, space, from, to: index, value, unclosed: false };
+  }
+}
+
+export function updatePromptDisplayInfo(info: string, mode: 'hide' | 'inline' | 'header'): string | undefined {
+  const options = [...infoOptions(info, infoLanguage(info).optionsFrom)];
+  if (options.some(({ unclosed }) => unclosed)) return;
+  const displays = options.filter(({ key }) => key === 'prompt-display');
+  if (mode !== 'header' && displays.length === 0) {
+    const end = info.trimEnd().length;
+    return `${info.slice(0, end)} prompt-display:${mode}${info.slice(end)}`;
+  }
+  let edited = info;
+  for (let index = displays.length - 1; index >= 0; index--) {
+    const { space, from, to, value } = displays[index]!;
+    const adjacent = to < edited.length && !/\s/.test(edited[to]!);
+    if (index === 0 && mode !== 'header') {
+      if (value?.toLowerCase() !== mode) {
+        edited = `${edited.slice(0, from)}prompt-display:${mode}${adjacent ? ' ' : ''}${edited.slice(to)}`;
+      }
+    } else {
+      edited = edited.slice(0, adjacent ? from : space) + edited.slice(to);
+    }
+  }
+  return edited;
+}
+
 export function parseInfo(info: string): {
   language: string; title: string; hasParameters: boolean;
   exclude?: boolean;
@@ -57,10 +130,7 @@ export function parseInfo(info: string): {
   context?: TerminalContext;
   headerStyle?: string; fold?: boolean; previewLines?: number; ansiRaw?: true; diagnostics: string[];
 } {
-  const languageMatch = /^([^\s:=]+)(?=\s|$)/.exec(info.trimStart());
-  const firstToken = languageMatch?.[1]?.toLowerCase() ?? '';
-  const language = foldOptions.has(firstToken) || firstToken === 'exclude' ? '' : firstToken;
-  const options = info.trimStart().slice(language ? languageMatch?.[0].length ?? 0 : 0);
+  const { language, optionsFrom } = infoLanguage(info);
   const values = new Map<string, string>();
   const diagnostics: string[] = [];
   let hasParameters = false;
@@ -69,14 +139,8 @@ export function parseInfo(info: string): {
   let previewLines: number | undefined;
   let command = false;
   let exclude = false;
-  let index = 0;
-  while (index < options.length) {
-    while (/\s/.test(options[index] ?? '') && index < options.length) index++;
-    const start = index;
-    while (index < options.length && !/[\s:=]/.test(options[index]!)) index++;
-    const key = options.slice(start, index).toLowerCase();
-    while (index < options.length && /\s/.test(options[index]!)) index++;
-    const hasValue = options[index] === ':' || options[index] === '=';
+  for (const { key, value, unclosed } of infoOptions(info, optionsFrom)) {
+    const hasValue = value !== undefined;
     const valueKey = key === 'encoding' && language === 'ansi' ? key : valueOptions.get(key);
     if (hasValue && (valueKey === 'prompt' || valueKey === 'prompt-text' ||
       valueKey === 'user' || valueKey === 'host' || valueKey === 'cwd')) {
@@ -95,27 +159,9 @@ export function parseInfo(info: string): {
       else if (valueKey === 'encoding') diagnostics.push('The "encoding" option requires "raw".');
       continue;
     }
-    index++;
-    while (index < options.length && /\s/.test(options[index]!)) index++;
-    const quote = options[index];
-    let value = '';
-    if (quote === '"' || quote === "'") {
-      index++;
-      while (index < options.length && options[index] !== quote) {
-        const char = options[index++]!;
-        if (char === '\\' && (options[index] === quote || options[index] === '\\')) {
-          value += options[index++]!;
-        } else value += char;
-      }
-      if (options[index] !== quote) {
-        diagnostics.push(`Unclosed quote in "${key}" option.`);
-        break;
-      }
-      index++;
-    } else {
-      const valueStart = index;
-      while (index < options.length && !/\s/.test(options[index]!)) index++;
-      value = options.slice(valueStart, index);
+    if (unclosed) {
+      diagnostics.push(`Unclosed quote in "${key}" option.`);
+      break;
     }
     if (valueKey !== undefined) values.set(valueKey, value);
     if (key === 'expand' || key === 'unfold') {
@@ -225,7 +271,8 @@ export function parseCodeBlocks(
       const startLine = lineAt(starts, base + node.from);
       const endLine = lineAt(starts, base + node.to);
       const closed = node.getChildren('CodeMark').length > 1;
-      if (info.explicitCommand && !info.exclude && isCommandLanguage(info.language)) {
+      const isExplicitCommand = info.explicitCommand && !info.exclude && isCommandLanguage(info.language);
+      if (isExplicitCommand) {
         explicitCommands.add(starts[startLine]!);
       }
       if (info.diagnostics.length > 0) pendingDiagnostics.set(startLine, info.diagnostics);
@@ -238,6 +285,7 @@ export function parseCodeBlocks(
         language: info.language,
         title: info.title,
         hasParameters: info.hasParameters,
+        ...(isExplicitCommand && infoNode ? { infoRange: { from: base + infoNode.from, to: base + infoNode.to } } : {}),
         ...(info.exclude ? { exclude: true } : {}),
         ...(!closed ? { unclosed: true } : {}),
         ...(!info.exclude && info.context && isCommandLanguage(info.language) ? { terminal: { ...info.context } } : {}),
