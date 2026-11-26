@@ -391,7 +391,7 @@ describe('live preview headers', () => {
     }
   });
 
-  it('reserves inline prompt space only in inline mode and updates the tooltip when metadata changes', () => {
+  it('reserves inline prompt space only in inline mode and updates the tooltip when metadata changes', async () => {
     const doc = '```powershell cmd cwd:"C:/a/very/long/directory" prompt-display:hide\nGet-Location\n```';
     const { view } = fixture(true, doc);
     const prompt = () => view.dom.querySelector<HTMLButtonElement>('.motto-command-prompt')!;
@@ -409,7 +409,46 @@ describe('live preview headers', () => {
     view.dispatch({ changes: { from: mode, to: mode + 'hide'.length, insert: 'inline' } });
     expect(prompt().querySelector('.motto-command-prompt-context')?.textContent).toBe('C:/a/very/long/elsewhere');
     expect(prompt().lastElementChild?.textContent).toBe('>');
-    expect(promptWidth()).toBe('25ch');
+    expect(promptWidth()).toMatch(/^var\(--motto-inline-prompt-width-\d+\)$/);
+    const ruler = view.contentDOM.querySelector<HTMLElement>('[data-motto-prompt-width]')!;
+    expect(ruler.dataset.context).toBe('C:/a/very/long/elsewhere');
+    expect(ruler.dataset.symbol).toBe('>');
+    ruler.style.width = '200.015625px';
+    await vi.waitFor(() => {
+      expect(view.scrollDOM.style.getPropertyValue(ruler.dataset.mottoPromptWidth!)).toBe('201px');
+    });
+    view.dispatch({ changes: { from: mode, to: mode + 'inline'.length, insert: 'hide' } });
+    expect(promptWidth()).toBe('');
+    await vi.waitFor(() => {
+      expect(view.scrollDOM.style.getPropertyValue(ruler.dataset.mottoPromptWidth!)).toBe('');
+    });
+  });
+
+  it('keeps continuation lines and empty commands in the same inline prompt layout', async () => {
+    const doc = [
+      'Intro', '', '```sh cmd prompt-text:"dev@server:~$" prompt-display:inline',
+      'printf \\', '  test', '```',
+      '```sh cmd prompt-text:"dev@server:~/work$" prompt-display:inline', '```',
+      '```plaintext', 'logout', '```',
+    ].join('\n');
+    const { view } = fixture(true, doc);
+    const [start, continuation, empty] = view.contentDOM.querySelectorAll<HTMLElement>('.motto-command-line');
+    expect(start?.querySelector('.motto-command-prompt')?.textContent).toBe('dev@server:~$');
+    expect(continuation?.querySelector('.motto-command-prompt')).toBeNull();
+    expect(empty?.querySelector('.motto-command-prompt')?.textContent).toBe('dev@server:~/work$');
+    const setWidth = (line: HTMLElement, width: string) => {
+      const ruler = line.querySelector<HTMLElement>('[data-motto-prompt-width]')!;
+      ruler.style.width = width;
+      return ruler.dataset.mottoPromptWidth!;
+    };
+    const property = setWidth(start!, '112.25px');
+    expect(setWidth(continuation!, '112.25px')).toBe(property);
+    const emptyProperty = setWidth(empty!, '160px');
+    expect(emptyProperty).not.toBe(property);
+    await vi.waitFor(() => {
+      expect(view.scrollDOM.style.getPropertyValue(property)).toBe('113px');
+      expect(view.scrollDOM.style.getPropertyValue(emptyProperty)).toBe('160px');
+    });
   });
 
   it('still folds blocks and toggles output on older CodeMirror hosts without scrollSnapshot', () => {

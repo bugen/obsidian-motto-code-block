@@ -82,7 +82,7 @@ Add options after the language name on the opening code fence. Quote values that
 | `cmd` | Render a fence listed in **Command languages** as a Command Block. |
 | `prompt:"user@host:~/project"` | Show the user, host, and working directory in a Command Block header. |
 | `prompt-text:"(PROD) [user@host ~]$"` | Use the literal prompt, including its final `$`, `#`, `%`, or `>`, instead of reconstructing it from the prompt fields. |
-| `prompt-display:inline` | Show the prompt on the command line instead of in the header. If space is limited, only the part before the prompt symbol is shortened. |
+| `prompt-display:inline` | Show the prompt on the command line instead of in the header. The prompt can use up to 40% of the row width; only the part before the prompt symbol is shortened. Hover over the symbol to see the full prompt. |
 | `prompt-display:hide` | Show only the prompt symbol on the command line. Hover over the symbol to see the full prompt above it. |
 | `user:`, `host:`, `cwd:` | Set the prompt fields individually. |
 | `exclude` | Disable this plugin's enhancements for the block. |

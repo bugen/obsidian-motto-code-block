@@ -1055,7 +1055,24 @@ body.theme-dark .motto-raw-copy > :nth-child(3) { color: #93c5fd; }
 }
 
 .motto-command-marker { display: inline-block; width: 0; height: 0; user-select: none; }
-.motto-command-marker > .motto-command-prompt { position: absolute; top: 0; inset-inline-start: var(--size-4-4, 16px); width: var(--motto-command-prompt-size, 16px); }
+.motto-command-marker > .motto-command-prompt {
+  position: absolute;
+  top: 0;
+  inset-inline-start: var(--size-4-4, 16px);
+  width: var(--motto-command-prompt-size, 16px);
+  letter-spacing: inherit;
+}
+.motto-command-prompt-ruler {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+.motto-command-prompt-ruler > span { display: flex; width: max-content; white-space: pre; }
+.motto-command-prompt-ruler > span::before { content: attr(data-context); }
+.motto-command-prompt-ruler > span::after { content: attr(data-symbol); }
 .motto-command-marker > .motto-command-tools {
   position: absolute;
   inset-block-start: calc((1lh - 24px) / 2);

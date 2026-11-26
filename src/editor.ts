@@ -212,9 +212,96 @@ interface EmptyCommandControls {
   remove?: DeleteTerminalBlock;
 }
 
-function commandPromptStyle(prompt: CommandPrompt): string {
-  return prompt.inlineContext
-    ? `--motto-command-prompt-width: ${Array.from(prompt.inlineContext + prompt.symbol).length}ch;` : '';
+function promptWidthProperty(from: number): string {
+  return `--motto-inline-prompt-width-${from}`;
+}
+
+function commandPromptStyle(prompt: CommandPrompt, from: number): string {
+  return prompt.inlineContext ? `--motto-command-prompt-width: var(${promptWidthProperty(from)});` : '';
+}
+
+function promptRuler(document: Document, prompt: CommandPrompt, from: number): HTMLElement {
+  const clip = createEl(document, 'span');
+  clip.className = 'motto-command-prompt-ruler';
+  clip.setAttribute('aria-hidden', 'true');
+  const ruler = clip.createSpan();
+  ruler.dataset.mottoPromptWidth = promptWidthProperty(from);
+  ruler.dataset.context = prompt.inlineContext;
+  ruler.dataset.symbol = prompt.symbol;
+  return clip;
+}
+
+class PromptRulerWidget extends WidgetType {
+  private readonly prompt: CommandPrompt;
+  private readonly from: number;
+
+  constructor(prompt: CommandPrompt, from: number) {
+    super();
+    this.prompt = prompt;
+    this.from = from;
+  }
+
+  override eq(other: PromptRulerWidget): boolean {
+    return this.from === other.from && this.prompt.inlineContext === other.prompt.inlineContext &&
+      this.prompt.symbol === other.prompt.symbol;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    return promptRuler(view.dom.ownerDocument, this.prompt, this.from);
+  }
+}
+
+function observePromptWidths(view: EditorView): { measure(): void; destroy(): void } {
+  const win = view.dom.ownerDocument.defaultView;
+  const style = view.scrollDOM.style;
+  const observed = new Set<HTMLElement>();
+  const applied = new Map<string, number>();
+  const resize = new ResizeObserver(() => measure());
+  function measure(): void {
+    view.requestMeasure({
+      key: measure,
+      read: () => {
+        const rulers = new Set(view.contentDOM.querySelectorAll<HTMLElement>('[data-motto-prompt-width]'));
+        const widths = new Map<string, number>();
+        for (const ruler of rulers) {
+          const property = ruler.dataset.mottoPromptWidth!;
+          const width = Number.parseFloat(win?.getComputedStyle(ruler).width ?? '');
+          // Reserve the entire intrinsic width, including fractional glyph advances.
+          if (width > 0) widths.set(property, Math.max(Math.ceil(width), widths.get(property) ?? 0));
+        }
+        return { rulers, widths };
+      },
+      write: ({ rulers, widths }) => {
+        for (const ruler of observed) {
+          if (rulers.has(ruler)) continue;
+          resize.unobserve(ruler);
+          observed.delete(ruler);
+        }
+        for (const ruler of rulers) {
+          if (observed.has(ruler)) continue;
+          resize.observe(ruler);
+          observed.add(ruler);
+        }
+        for (const property of applied.keys()) {
+          if (widths.has(property)) continue;
+          style.removeProperty(property);
+          applied.delete(property);
+        }
+        for (const [property, width] of widths) {
+          if (applied.get(property) === width) continue;
+          style.setProperty(property, `${width}px`);
+          applied.set(property, width);
+        }
+      },
+    });
+  }
+  return {
+    measure,
+    destroy() {
+      resize.disconnect();
+      for (const property of applied.keys()) style.removeProperty(property);
+    },
+  };
 }
 
 class CommandWidget extends WidgetType {
@@ -298,8 +385,9 @@ class CommandWidget extends WidgetType {
     const row = createEl(document, 'div');
     row.className = 'motto-command-line motto-command-empty-line';
     row.contentEditable = 'false';
-    row.style.cssText = commandPromptStyle(this.prompt);
+    row.style.cssText = commandPromptStyle(this.prompt, this.from);
     row.append(marker);
+    if (this.prompt.inlineContext) row.append(promptRuler(document, this.prompt, this.from));
     const { editAt, remove } = this.emptyControls;
     if (editAt !== undefined) tools.prepend(terminalEditButton(document, 'Edit command source', () => {
       view.dispatch({ selection: { anchor: editAt } });
@@ -615,7 +703,7 @@ function decorate(
           }).range(block.from));
         }
       }
-      const promptWidth = commandPromptStyle(prompt);
+      const promptWidth = commandPromptStyle(prompt, block.from);
       const lastCommand = commands[commands.length - 1];
       let commandIndex = 0;
       let command: CommandRange | undefined = commands[0];
@@ -634,6 +722,11 @@ function decorate(
             (withToggle ? ` ${outputToggleClasses(settings.outputToggleStyles)}` : ''),
           style: `${promptWidth}--motto-command-tools-width: ${withToggle ? '68px' : '36px'}`,
         } }).range(from));
+        if (prompt.inlineContext && !emptyPreview) {
+          decorations.push(Decoration.widget({
+            widget: new PromptRulerWidget(prompt, block.from), side: -2,
+          }).range(from));
+        }
         if (wrap === false && from < to) {
           commandScrolls.push(Decoration.mark({ class: 'motto-command-scroll' }).range(from, to));
         }
@@ -975,18 +1068,24 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
       }])),
       ViewPlugin.define((view) => {
         views.add(view);
+        const promptWidths = observePromptWidths(view);
         const place = () => {
           if (view.state.field(field).livePreview) measureTerminalControls(view);
         };
         view.scrollDOM.addEventListener('scroll', place, { passive: true });
         place();
+        if (view.state.field(field).livePreview) promptWidths.measure();
         return {
           update(update) {
             if (update.geometryChanged || update.viewportChanged || update.docChanged ||
-                update.startState.field(field).decorations !== update.state.field(field).decorations) place();
+                update.startState.field(field).decorations !== update.state.field(field).decorations) {
+              place();
+              if (update.startState.field(field).livePreview || update.state.field(field).livePreview) promptWidths.measure();
+            }
           },
           destroy() {
             view.scrollDOM.removeEventListener('scroll', place);
+            promptWidths.destroy();
             views.delete(view);
           },
         };
