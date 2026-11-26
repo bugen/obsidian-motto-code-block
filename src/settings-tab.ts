@@ -63,7 +63,8 @@ export class MottoSettingsTab extends PluginSettingTab {
         type: 'group', heading: 'Command blocks', cls: 'motto-settings-section motto-settings-level-2',
         items: [
           this.customSettings('Command blocks', [
-            'Command languages', 'Command spacing', 'Terminal prompt patterns', 'Ignored terminal command suffixes',
+            'Command languages', 'Color inline prompts', 'Command spacing',
+            'Terminal prompt patterns', 'Ignored terminal command suffixes',
           ], (parent) => this.addCommands(parent)),
           this.customSettings('Output', [
             'Output languages', 'Output toggle icon', 'Reverse output toggle icons',
@@ -188,11 +189,27 @@ export class MottoSettingsTab extends PluginSettingTab {
     this.addLanguageList(commands, 'commandLanguages', 'Command languages',
       'Add fence languages such as dash without changing the general include list. The exclude list and exclude flag still apply. Separate with commas, spaces or new lines; case-insensitive, exact names only. Empty disables command blocks.',
       noCommands);
+    this.addThemeGroup(commands, (parent, mode, refresh) => this.addPromptColor(parent, mode, refresh));
     this.addChoice(commands, 'commandSpacing', 'Command spacing',
       'Vertical spacing between commands in the same block. Small keeps the original spacing; Middle is the default. Continued lines are unchanged.',
       COMMAND_SPACING_MODES, { small: 'Small', middle: 'Middle', large: 'Large' }, noCommands);
     this.addTerminalPromptPatterns(commands);
     this.addIgnoredTerminalCommandSuffixes(commands);
+  }
+
+  private addPromptColor(parent: HTMLElement, mode: ColorMode, refresh: () => void): void {
+    const update = (value: boolean, afterSave?: () => void) => this.save((settings) => ({
+      ...settings, colorInlinePrompts: { ...settings.colorInlinePrompts, [mode]: value },
+    }), afterSave);
+    this.createSetting(parent, 'Color inline prompts', () => !this.motto.settings.commandBlocks, mode)
+      .setDesc('Use theme colors for the text before the prompt symbol. Turn off to use the same color as the symbol.')
+      .addToggle((toggle) => {
+        toggle.setValue(this.motto.settings.colorInlinePrompts[mode]).onChange((value) => update(value));
+      })
+      .addExtraButton(this.resetButton(
+        () => update(DEFAULT_SETTINGS.colorInlinePrompts[mode], refresh),
+        () => this.motto.settings.colorInlinePrompts[mode] !== DEFAULT_SETTINGS.colorInlinePrompts[mode],
+      ));
   }
 
   private addTerminalPromptPatterns(parent: HTMLElement): void {

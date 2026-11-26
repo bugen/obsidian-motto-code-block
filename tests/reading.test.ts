@@ -52,11 +52,65 @@ function block(content: string, language = 'js') {
 afterEach(() => {
   for (const renderer of renderers.splice(0)) renderer.destroy();
   document.body.replaceChildren();
+  document.body.classList.remove('theme-dark');
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 describe('reading mode headers', () => {
+  it.each(['light', 'dark'] as const)('uses the %s setting for context colors without changing the symbol', async (mode) => {
+    document.body.classList.toggle('theme-dark', mode === 'dark');
+    const stylesheet = document.body.createEl('style');
+    stylesheet.textContent = readFileSync(new NodeURL('../styles.css', import.meta.url), 'utf8');
+    const source = [
+      '```bash cmd prompt-text:"(dev) alice@server:~/work$" prompt-display:inline\npwd\n```',
+      '```bash cmd prompt-text:"(custom) work$" prompt-display:inline\nls\n```',
+      '```bash cmd prompt-text:"(custom) work$" prompt-display:hide\nwhoami\n```',
+    ].join('\n\n');
+    const { renderer, context, updateSettings } = fixture(source);
+    const accent = 'rgb(35, 40, 100)';
+    const faint = 'rgb(90, 90, 90)';
+    const user = 'rgb(50, 80, 65)';
+    const host = 'rgb(110, 75, 35)';
+    const cwd = 'rgb(40, 70, 125)';
+    const process = async (command: string) => {
+      const { section } = block(command, 'bash');
+      section.style.setProperty('--text-accent', accent);
+      section.style.setProperty('--text-faint', faint);
+      section.style.setProperty('--code-string', user);
+      section.style.setProperty('--code-function', host);
+      section.style.setProperty('--code-value', cwd);
+      await renderer.process(section, context);
+      return section.querySelector('.motto-command-prompt')!;
+    };
+    const structured = await process('pwd');
+    expect(structured.textContent).toBe('(dev) alice@server:~/work$');
+    expect(structured.querySelector('.motto-command-prompt-symbol')?.getAttribute('aria-label'))
+      .toBe('(dev) alice@server:~/work$');
+    expect(Array.from(structured.querySelector('.motto-command-prompt-context')!.children, (field) =>
+      [field.textContent, getComputedStyle(field).color])).toEqual([['alice', user], ['server', host], ['~/work', cwd]]);
+
+    const literal = await process('ls');
+    expect(literal.textContent).toBe('(custom) work$');
+    const inlineContext = literal.querySelector('.motto-command-prompt-context')!;
+    expect(inlineContext.children).toHaveLength(0);
+    expect(getComputedStyle(inlineContext).color).toBe(accent);
+    const hidden = await process('whoami');
+    expect(hidden.textContent).toBe('$');
+    for (const prompt of [structured, literal, hidden]) {
+      expect(getComputedStyle(prompt.querySelector('.motto-command-prompt-symbol')!).color).toBe(faint);
+    }
+
+    const sections = [structured, literal].map((prompt) => prompt.closest('section')!);
+    updateSettings({ ...DEFAULT_SETTINGS, colorInlinePrompts: { ...DEFAULT_SETTINGS.colorInlinePrompts, [mode]: false } });
+    for (const section of sections) {
+      const current = section.querySelector('.motto-command-prompt-context')!;
+      for (const element of [current, ...current.children]) expect(getComputedStyle(element).color).toBe(faint);
+      expect(getComputedStyle(current.nextElementSibling!).color).toBe(faint);
+      expect(current.textContent).not.toBe('');
+    }
+  });
+
   it('updates unsaved prompt options when entering a preview that reused its rendered sections', async () => {
     const saved = '```bash cmd prompt:"demo@server:~" prompt-display:inline\npwd\n```';
     const updated = saved.replace('prompt-display:inline', 'prompt-display:hide');

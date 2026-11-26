@@ -633,6 +633,26 @@ button.motto-command-prompt {
 
 .motto-command-prompt-symbol { flex-shrink: 0; }
 
+body:not(.theme-dark) .motto-color-inline-prompts-light .motto-command-prompt > .motto-command-prompt-context,
+body.theme-dark .motto-color-inline-prompts-dark .motto-command-prompt > .motto-command-prompt-context {
+  color: var(--text-accent, var(--text-normal));
+}
+
+body:not(.theme-dark) .motto-color-inline-prompts-light .motto-command-prompt-user,
+body.theme-dark .motto-color-inline-prompts-dark .motto-command-prompt-user {
+  color: var(--code-string, var(--color-green, currentColor));
+}
+
+body:not(.theme-dark) .motto-color-inline-prompts-light .motto-command-prompt-host,
+body.theme-dark .motto-color-inline-prompts-dark .motto-command-prompt-host {
+  color: var(--code-function, var(--color-orange, currentColor));
+}
+
+body:not(.theme-dark) .motto-color-inline-prompts-light .motto-command-prompt-cwd,
+body.theme-dark .motto-color-inline-prompts-dark .motto-command-prompt-cwd {
+  color: var(--code-value, var(--color-cyan, currentColor));
+}
+
 .tooltip.motto-prompt-tooltip {
   --motto-prompt-tooltip-background: var(--background-secondary, var(--background-primary));
   padding: 6px 10px;

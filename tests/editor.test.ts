@@ -451,6 +451,37 @@ describe('live preview headers', () => {
     });
   });
 
+  it('updates prompt colors when field metadata changes without changing the displayed text', () => {
+    const literal = 'prompt-text:"dev@server:repo$"';
+    const doc = `\`\`\`sh cmd ${literal} prompt-display:inline\npwd\n\`\`\``;
+    const { view } = fixture(true, doc);
+    const context = () => view.contentDOM.querySelector('.motto-command-prompt-context')!;
+    expect(context().textContent).toBe('dev@server:repo');
+    expect(context().children).toHaveLength(0);
+
+    const from = doc.indexOf(literal);
+    view.dispatch({ changes: { from, to: from + literal.length, insert: 'prompt:"dev@server:repo"' } });
+    expect(context().textContent).toBe('dev@server:repo');
+    expect(context().querySelector('.motto-command-prompt-user')?.textContent).toBe('dev');
+    expect(context().querySelector('.motto-command-prompt-host')?.textContent).toBe('server');
+    expect(context().querySelector('.motto-command-prompt-cwd')?.textContent).toBe('repo');
+  });
+
+  it('updates the inline prompt palette without replacing the Live Preview prompt', () => {
+    const { view, updateSettings } = fixture(true, '```sh cmd user:dev prompt-display:inline\npwd\n```');
+    const field = view.dom.querySelector('.motto-command-prompt-user')!;
+    expect(field.closest('.motto-color-inline-prompts-light.motto-color-inline-prompts-dark')).toBe(view.dom);
+
+    updateSettings({ ...DEFAULT_SETTINGS, colorInlinePrompts: { light: false, dark: true } });
+    expect(view.dom.querySelector('.motto-command-prompt-user')).toBe(field);
+    expect(field.closest('.motto-color-inline-prompts-light')).toBeNull();
+    expect(field.closest('.motto-color-inline-prompts-dark')).toBe(view.dom);
+
+    updateSettings({ ...DEFAULT_SETTINGS, colorInlinePrompts: { light: true, dark: false } });
+    expect(field.closest('.motto-color-inline-prompts-light')).toBe(view.dom);
+    expect(field.closest('.motto-color-inline-prompts-dark')).toBeNull();
+  });
+
   it('still folds blocks and toggles output on older CodeMirror hosts without scrollSnapshot', () => {
     const doc = 'Intro\n\n```js fold\nrun()\n```\n\n```sh\npwd\n```\n```plaintext\n/work\n```';
     const { view } = fixture(true, doc);

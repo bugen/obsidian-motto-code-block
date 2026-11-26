@@ -76,15 +76,19 @@ function isMarker(value: string | undefined): value is Marker {
   return value === '$' || value === '#' || value === '>' || value === '%';
 }
 
+export function literalPromptContext(text: string): TerminalContext | undefined {
+  const core = text.replace(leadingDecorations, '');
+  const bash = bashPrompt.exec(core);
+  if (bash?.[0] === core) return { user: bash[1]!, host: bash[2]!, cwd: bash[3]! };
+  const powershell = powerShellPrompt.exec(core);
+  if (powershell?.[0] === core) return { cwd: powershell[1]! };
+}
+
 function matchPrompt(line: string, end: number): PromptMatch | undefined {
   const marker = line[end - 1];
   if (!isMarker(marker) || (end < line.length && line[end] !== ' ' && line[end] !== '\t')) return;
   const text = line.slice(0, end);
-  const core = text.replace(leadingDecorations, '');
-  const bash = bashPrompt.exec(core);
-  const powershell = powerShellPrompt.exec(core);
-  const context = bash?.[0] === core ? { user: bash[1]!, host: bash[2]!, cwd: bash[3]! }
-    : powershell?.[0] === core ? { cwd: powershell[1]! } : undefined;
+  const context = literalPromptContext(text);
   const language = marker === '>' ? 'powershell' : marker === '%' ? 'zsh' : 'bash';
   return {
     prompt: { text, marker, language, ...(context ? { context } : {}) },

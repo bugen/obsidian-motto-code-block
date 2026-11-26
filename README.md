@@ -37,6 +37,8 @@ Command Block presents shell commands and their output in a terminal-style layou
 The default **Command languages** are `sh`, `bash`, `zsh`, `csh`, `fish`, and `powershell`. To use another shell, add its fence name (such as `dash`) under **Command blocks → Command languages**, then use a fence like `dash cmd`. You do not need to add it to the general include list. The exclude list and `exclude` still take precedence.
 
 Click a command's prompt to toggle line wrapping for that command, including any continuation lines. With wrapping off, scroll horizontally to read long lines.
+
+Inline prompts use your theme's colors and distinguish the user, host, and working directory when recognized. Use **Editing theme** to set **Command blocks → Color inline prompts** separately for Light and Dark. Turn it off to use the same color throughout the prompt.
 `powershell` blocks keep the PowerShell icon, show `>` instead of `$` or `#`, and use a trailing backtick to continue a command on the next line.
 
 In Reading view, consecutive `cmd` blocks with no blank lines between them are displayed as one compact terminal session. Live Preview keeps them separate for editing. Each output still opens and closes independently. Insert a blank line after a command and its output to start a new session.

@@ -10,15 +10,27 @@ import hippoIcon from './hippo.svg';
 import { replyToHippo, updateHippoSpeech } from './hippo-speech';
 import { createEl, createFragment } from './dom';
 
+export function inlinePromptColorClasses(colors: MottoSettings['colorInlinePrompts']): string[] {
+  return COLOR_MODES.filter((mode) => colors[mode]).map((mode) => `motto-color-inline-prompts-${mode}`);
+}
+
 export function commandPrompt(
-  document: Document, { symbol, inlineContext, tooltip }: CommandPrompt, toggleWrap?: () => void,
+  document: Document, { symbol, inlineContext, inlineParts, tooltip }: CommandPrompt, toggleWrap?: () => void,
 ): HTMLElement {
   const prompt = createEl(document, toggleWrap ? 'button' : 'span');
   prompt.className = 'motto-command-prompt';
   if (inlineContext) {
     const context = prompt.createSpan();
     context.className = 'motto-command-prompt-context';
-    context.textContent = inlineContext;
+    if (inlineParts) {
+      for (const { field, text } of inlineParts) {
+        if (field) {
+          const part = context.createSpan();
+          part.className = `motto-command-prompt-${field}`;
+          part.textContent = text;
+        } else context.append(text);
+      }
+    } else context.textContent = inlineContext;
   }
   const marker = prompt.createSpan();
   marker.className = 'motto-command-prompt-symbol';

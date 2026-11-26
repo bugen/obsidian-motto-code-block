@@ -452,13 +452,13 @@ export class ReadingHeaders {
       if (mount.block.terminal.session === 'first') mount.sessionMenu ??= this.createSessionMenu(pre, mount);
       const folded = mount.foldState === 'folded';
       mount.layout = new ReadingCommandView(pre, withSessionPrompt(mount.block, this.sessionFor(mount)?.prompt),
-        mount.wrappedCommands, settings.outputToggleStyles,
+        mount.wrappedCommands, settings,
         mount.foldState, preview, outputState,
         output && outputState ? () => this.preserveScroll(pre, () => {
           Object.assign(outputState, nextOutputState(output, outputState));
           if (mount.layout instanceof ReadingCommandView) mount.layout.setOutputState(outputState);
           this.renderOutputs();
-        }) : undefined, settings.tapMyHippo, settings.commandSpacing, folded ? undefined : mount.sessionMenu);
+        }) : undefined, folded ? undefined : mount.sessionMenu);
       if (folded && mount.header && mount.sessionMenu) {
         const controls = mount.header.querySelector<HTMLElement>('.motto-header-controls');
         if (controls) mount.sessionMenu.attach(mount.header, controls);

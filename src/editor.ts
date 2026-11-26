@@ -8,7 +8,7 @@ import { shouldShowHeader, type FoldState, type MottoSettings } from './settings
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { formatCommandPrompt, splitCommands, type CommandPrompt, type CommandRange } from './commands';
-import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, outputToggleClasses, setOutputToggle, terminalDeleteButton, terminalEditButton } from './command-render';
+import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, inlinePromptColorClasses, outputToggleClasses, setOutputToggle, terminalDeleteButton, terminalEditButton } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 import { forcesPromptHeader, SessionMenu, withSessionPrompt, type SessionMenuActions, type SessionOutputAction, type SessionPromptMode } from './session-menu';
@@ -335,8 +335,12 @@ class CommandWidget extends WidgetType {
   }
 
   private sameContent(other: CommandWidget): boolean {
+    const parts = this.prompt.inlineParts;
+    const otherParts = other.prompt.inlineParts;
     return this.from === other.from && this.text === other.text &&
       this.prompt.symbol === other.prompt.symbol && this.prompt.inlineContext === other.prompt.inlineContext &&
+      parts?.length === otherParts?.length &&
+      (!parts || parts.every((part, i) => part.field === otherParts?.[i]?.field && part.text === otherParts?.[i]?.text)) &&
       this.prompt.tooltip === other.prompt.tooltip &&
       this.output === other.output && this.emptyControls?.editAt === other.emptyControls?.editAt &&
       this.emptyControls?.remove === other.emptyControls?.remove &&
@@ -1046,6 +1050,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
   return {
     extension: [
       field,
+      EditorView.editorAttributes.of(() => ({ class: inlinePromptColorClasses(getSettings().colorInlinePrompts).join(' ') })),
       Prec.high(EditorView.domEventHandlers({ paste: (event, view) => pasteAnsi(event, view, getSettings()) })),
       Prec.high(keymap.of([{
         key: 'Mod-a',

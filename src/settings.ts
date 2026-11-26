@@ -43,6 +43,7 @@ export interface MottoSettings {
   outputLanguages: string[];
   terminalPromptPatterns: TerminalPromptPattern[];
   terminalIgnoredCommandSuffixes: string;
+  colorInlinePrompts: Record<ColorMode, boolean>;
   commandSpacing: CommandSpacing;
   tapMyHippo: boolean;
   showIcon: boolean;
@@ -79,6 +80,7 @@ export const DEFAULT_SETTINGS: Readonly<MottoSettings> = {
   outputLanguages: ['ansi', 'plaintext'],
   terminalPromptPatterns: DEFAULT_TERMINAL_PROMPT_PATTERNS.map((pattern) => ({ ...pattern })),
   terminalIgnoredCommandSuffixes: '^C',
+  colorInlinePrompts: { light: true, dark: true },
   commandSpacing: 'middle',
   tapMyHippo: false,
   showIcon: true,
@@ -226,6 +228,7 @@ export function parseSettings(data: unknown): MottoSettings {
     commandLanguages: [...DEFAULT_SETTINGS.commandLanguages],
     outputLanguages: [...DEFAULT_SETTINGS.outputLanguages],
     terminalPromptPatterns: DEFAULT_SETTINGS.terminalPromptPatterns.map((pattern) => ({ ...pattern })),
+    colorInlinePrompts: { ...DEFAULT_SETTINGS.colorInlinePrompts },
     headerStyles: {
       light: { ...DEFAULT_SETTINGS.headerStyles.light },
       dark: { ...DEFAULT_SETTINGS.headerStyles.dark },
@@ -266,6 +269,19 @@ export function parseSettings(data: unknown): MottoSettings {
     if (typeof data.terminalIgnoredCommandSuffixes === 'string') {
       settings.terminalIgnoredCommandSuffixes = data.terminalIgnoredCommandSuffixes;
     } else console.warn('[Motto Code Block] Invalid setting "terminalIgnoredCommandSuffixes"; using its default.');
+  }
+  if ('colorInlinePrompts' in data) {
+    const colors = data.colorInlinePrompts;
+    if (typeof colors === 'boolean') {
+      settings.colorInlinePrompts = { light: colors, dark: colors };
+    } else if (isRecord(colors)) {
+      for (const mode of COLOR_MODES) {
+        if (!(mode in colors)) continue;
+        const value = colors[mode];
+        if (typeof value === 'boolean') settings.colorInlinePrompts[mode] = value;
+        else console.warn(`[Motto Code Block] Invalid setting "colorInlinePrompts.${mode}"; using its default.`);
+      }
+    } else console.warn('[Motto Code Block] Invalid setting "colorInlinePrompts"; using its default.');
   }
   if ('commandSpacing' in data) {
     if (isChoice(data.commandSpacing, COMMAND_SPACING_MODES)) settings.commandSpacing = data.commandSpacing;

@@ -59,6 +59,19 @@ describe('saved settings', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"commandSpacing"'));
   });
 
+  it('preserves independent inline prompt colors and migrates a shared choice to both themes', () => {
+    expect(parseSettings({}).colorInlinePrompts).toEqual({ light: true, dark: true });
+    for (const enabled of [false, true]) {
+      expect(parseSettings({ colorInlinePrompts: enabled }).colorInlinePrompts).toEqual({ light: enabled, dark: enabled });
+    }
+    const settings = parseSettings({ colorInlinePrompts: { light: true, dark: false } });
+    expect(parseSettings(JSON.parse(JSON.stringify(settings))).colorInlinePrompts).toEqual({ light: true, dark: false });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSettings({ colorInlinePrompts: { light: 'false', dark: false } }).colorInlinePrompts)
+      .toEqual({ light: true, dark: false });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"colorInlinePrompts.light"'));
+  });
+
   it('keeps Hippo speech opt-in, round-trips the choice and reports invalid values', () => {
     expect(parseSettings({}).tapMyHippo).toBe(false);
     for (const tapMyHippo of [true, false]) {

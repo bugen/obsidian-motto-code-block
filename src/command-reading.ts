@@ -1,7 +1,7 @@
 import type { CodeBlock, CommandSessionPosition } from './codeblock';
 import { formatCommandPrompt, splitCommands, type CommandRange } from './commands';
-import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, setOutputToggle } from './command-render';
-import { DEFAULT_SETTINGS, type CommandSpacing, type FoldState, type MottoSettings } from './settings';
+import { cloneCodeRange, commandOutputPreview, commandPrompt, commandTools, inlinePromptColorClasses, setOutputToggle } from './command-render';
+import type { FoldState, MottoSettings } from './settings';
 import { destroyHippoSpeech } from './hippo-speech';
 import { createEl } from './dom';
 import { outputPreviewLineCount, type OutputState } from './folding';
@@ -24,21 +24,22 @@ export class ReadingCommandView {
   private outputState: OutputState | undefined;
 
   constructor(
-    pre: HTMLElement, block: CodeBlock, wrappedCommands: Set<number>, styles: MottoSettings['outputToggleStyles'],
+    pre: HTMLElement, block: CodeBlock, wrappedCommands: Set<number>,
+    settings: Pick<MottoSettings, 'outputToggleStyles' | 'tapMyHippo' | 'commandSpacing' | 'colorInlinePrompts'>,
     foldState: FoldState, preview: number | undefined,
     outputState: OutputState | undefined, toggle?: () => void,
-    tapMyHippo = false, spacing: CommandSpacing = DEFAULT_SETTINGS.commandSpacing,
     sessionMenu?: SessionMenu,
   ) {
     this.pre = pre;
-    this.styles = styles;
+    this.styles = settings.outputToggleStyles;
     this.output = block.terminal?.output;
     this.outputState = outputState;
     this.expanded = foldState === 'expanded';
-    this.tapMyHippo = tapMyHippo;
+    this.tapMyHippo = settings.tapMyHippo;
     const document = pre.ownerDocument;
     const view = this.view = createEl(document, 'div');
-    view.className = `motto-command-view motto-command-spacing-${spacing}`;
+    view.className = `motto-command-view motto-command-spacing-${settings.commandSpacing}`;
+    view.classList.add(...inlinePromptColorClasses(settings.colorInlinePrompts));
     view.classList.toggle('motto-command-partial', preview !== undefined);
     view.classList.toggle('motto-command-output-open', this.outputState?.open === true && this.expanded);
     view.hidden = foldState === 'folded' || pre.hidden;

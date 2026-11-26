@@ -306,7 +306,7 @@ describe('settings tab', () => {
       .map((marker) => marker.closest<HTMLElement>('[data-motto-setting]')?.dataset.mottoSetting);
     expect(marked()).toEqual([
       'Icon size', 'Language label style', 'Header background', 'Custom background color',
-      'Bold title', 'Italic title', 'Title font size', 'Override title color', 'Custom title color',
+      'Bold title', 'Italic title', 'Title font size', 'Override title color', 'Custom title color', 'Color inline prompts',
       'Output toggle icon', 'Reverse output toggle icons', 'Override output toggle color', 'Output toggle color',
     ]);
     expect(row('Icon size').querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('Editing Light');
@@ -535,6 +535,31 @@ describe('settings tab', () => {
     await vi.waitFor(() => {
       expect(saved[saved.length - 1]).toEqual({ ...DEFAULT_SETTINGS, showHeaderCopyButton: true });
       expect(row('Command spacing').querySelector('select')?.value).toBe('middle');
+    });
+  });
+
+  it.each([false, true])('persists and resets inline prompt coloring independently by theme (declarative=%s)', async (declarative) => {
+    const { saved, row, change, reset } = fixture(declarative);
+    const name = 'Color inline prompts';
+    const colors = () => saved[saved.length - 1]?.colorInlinePrompts;
+    expect(row(name).querySelector('input')?.checked).toBe(true);
+    change(name, false);
+    await vi.waitFor(() => {
+      expect(colors()).toEqual({ light: false, dark: true });
+    });
+    change('Editing theme', 'dark');
+    await vi.waitFor(() => {
+      expect(row(name).querySelector('.motto-theme-setting-icon')?.getAttribute('aria-label')).toContain('Editing Dark');
+      expect(row(name).querySelector('input')?.checked).toBe(true);
+    });
+    change(name, false);
+    await vi.waitFor(() => {
+      expect(colors()).toEqual({ light: false, dark: false });
+    });
+    reset(name);
+    await vi.waitFor(() => {
+      expect(colors()).toEqual({ light: false, dark: true });
+      expect(row(name).querySelector('input')?.checked).toBe(true);
     });
   });
 
