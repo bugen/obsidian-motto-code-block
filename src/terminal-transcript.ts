@@ -1,4 +1,4 @@
-import { ansiText } from './ansi-text';
+import { ansiText, encodeAnsiSource, trailingAnsiSgr } from './ansi-text';
 import { continuesCommand, formatCommandPrompt } from './commands';
 import { createPromptDetector, type PromptDetector, type TranscriptPrompt } from './terminal-prompt';
 
@@ -16,7 +16,8 @@ export function parseTerminalTranscript(
 ): TranscriptResult {
   const lines = text.replaceAll('\r\n', '\n').split('\n');
   if (lines[lines.length - 1] === '') lines.pop();
-  const first = detect(ansiText(lines[0] ?? ''), undefined);
+  let lastCommandLine = lines[0] ?? '';
+  const first = detect(ansiText(lastCommandLine), undefined);
   if (!first) return { error: 'missing-prompt' };
 
   const entries: TranscriptEntry[] = [];
@@ -46,6 +47,7 @@ export function parseTerminalTranscript(
     if (continued) {
       const body = line.replace(prompt.language === 'powershell' ? /^>>[ \t]/ : /^>[ \t]/, '');
       command.push(body);
+      lastCommandLine = raw;
       continued = continuesCommand(body, prompt.language);
       continue;
     }
@@ -55,12 +57,13 @@ export function parseTerminalTranscript(
       prompt = next.prompt;
       if (!next.approximate) reference = prompt;
       command = next.command.trim() ? [next.command] : [];
+      lastCommandLine = raw;
       output = [];
       hasOutput = false;
       seenCommand ||= command.length > 0;
       continued = command.length > 0 && continuesCommand(next.command, prompt.language);
     } else if (seenCommand) {
-      output.push(raw);
+      output.push(output.length === 0 ? trailingAnsiSgr(lastCommandLine) + raw : raw);
       hasOutput ||= line.trim().length > 0;
     } else if (line.trim()) {
       return { error: 'output-before-command' };
@@ -99,7 +102,7 @@ export function formatTerminalTranscript(entries: readonly TranscriptEntry[], ke
     fences.push(fence(info, command));
     if (output.length > 0) {
       const body = output.join('\n');
-      fences.push(fence(keepAnsi ? 'ansi' : 'plaintext', keepAnsi ? body : ansiText(body)));
+      fences.push(fence(keepAnsi ? 'ansi' : 'plaintext', keepAnsi ? encodeAnsiSource(body) : ansiText(body)));
     }
   }
   return fences.join('\n');

@@ -113,6 +113,18 @@ describe('terminal transcript parsing', () => {
     expect(parsed[1]?.command).toBe('pwd');
   });
 
+  it('carries trailing SGR from a continuation, but not earlier command styles or cursor controls', () => {
+    const { blocks } = parseCodeBlocks(formatTerminalTranscript(entries([
+      '$ printf \\',
+      '> \x1b[1mhello\x1b[22m end\x1b[2J\x9b31m',
+      'result',
+    ].join('\n')), true));
+    expect(blocks.map(({ text }) => text)).toEqual([
+      'printf \\\nhello end',
+      String.raw`\x9B31mresult`,
+    ]);
+  });
+
   it('skips canceled commands and their output without filtering output from other commands', () => {
     const result = parseTerminalTranscript([
       '$ ^C', '$ ls', 'file', '^C', '$ cd ^C   ', 'discarded with canceled input',
@@ -140,7 +152,7 @@ describe('terminal transcript parsing', () => {
       block.text, block.terminal?.promptText, block.terminal?.output?.language, block.terminal?.output?.text,
     ])).toEqual([
       ['qstat', prompt, keepAnsi ? 'ansi' : 'plaintext', 'job-ID  name\n    42  demo'],
-      ['', prompt, keepAnsi ? 'ansi' : 'plaintext', keepAnsi ? finalOutput : 'logout'],
+      ['', prompt, keepAnsi ? 'ansi' : 'plaintext', keepAnsi ? String.raw`\x1B[32mlogout\x1B[0m` : 'logout'],
     ]);
   });
 
@@ -188,7 +200,7 @@ it('round-trips adjacent command/output fences in both ANSI modes, including fen
     expect(diagnostics).toEqual([]);
     expect(blocks.map((block) => [block.language, block.text, block.terminal?.session])).toEqual([
       ['bash', 'pwd', 'first'],
-      [keepAnsi ? 'ansi' : 'plaintext', [keepAnsi ? outputs[0] : 'red', ...outputs.slice(1)].join('\n'), undefined],
+      [keepAnsi ? 'ansi' : 'plaintext', [keepAnsi ? String.raw`\x1B[31mred\x1B[0m` : 'red', ...outputs.slice(1)].join('\n'), undefined],
       ['bash', 'cd work', 'middle'], ['bash', 'ls', 'last'],
     ]);
     expect(blocks[0]?.terminal?.cwd).toBe('~/`folder`');

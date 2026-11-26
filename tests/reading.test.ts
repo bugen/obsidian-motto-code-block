@@ -882,10 +882,11 @@ describe('reading mode headers', () => {
     expect(native.section.querySelector('.motto-ansi-standalone code')?.textContent).toBe('first\nsecond');
   });
 
-  it('copies full plain or raw standalone ANSI from a partial preview without expanding it', async () => {
+  it.each([false, true])('copies full plain or raw standalone ANSI from a partial preview (escaped=%s)', async (escaped) => {
     const content = '\x1b[31mfirst\nsecond\nthird\x1b[0m';
-    const { renderer, context } = fixture(`\`\`\`ansi title:Log expand:1\n${content}\n\`\`\``);
-    const native = block(content, 'ansi');
+    const source = escaped ? '\\x1B[31mfirst\nsecond\nthird\\x1B[0m' : content;
+    const { renderer, context } = fixture(`\`\`\`ansi title:Log expand:1\n${source}\n\`\`\``);
+    const native = block(source, 'ansi');
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
     await renderer.process(native.section, context);
     const preview = native.section.querySelector<HTMLElement>('.motto-ansi-standalone pre')!;
@@ -903,7 +904,7 @@ describe('reading mode headers', () => {
     native.section.querySelector<HTMLButtonElement>('.motto-expand-button')!.click();
     expect(native.section.querySelector('.motto-partial-codeblock, .motto-expand-button')).toBeNull();
     expect(native.section.querySelectorAll('.motto-line-number')).toHaveLength(3);
-    expect(native.code.textContent).toBe(`${content}\n`);
+    expect(native.code.textContent).toBe(`${source}\n`);
   });
 
   it.each([

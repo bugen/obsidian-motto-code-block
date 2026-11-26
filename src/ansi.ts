@@ -1,5 +1,6 @@
 import Anser from 'anser';
 import ansiRegex from 'ansi-regex';
+import { isAnsiSgr } from './ansi-text';
 import { createFragment } from './dom';
 
 export { ansiText } from './ansi-text';
@@ -22,10 +23,8 @@ function ansiColor(color: string, trueColor: string): string {
 export function renderAnsi(document: Document, text: string): DocumentFragment {
   const fragment = createFragment(document);
   const parser = new Anser();
-  // eslint-disable-next-line no-control-regex -- Match ANSI SGR control characters.
-  const sgr = /^(?:\u001b\[|\u009b)[\d;]*m$/u;
   const styled = text.replace(ansiRegex(), (sequence) =>
-    sgr.test(sequence) ? sequence.replace('\u009b', '\u001b[') : '');
+    isAnsiSgr(sequence) ? sequence.replace('\u009b', '\u001b[') : '');
   for (const [index, part] of styled.split('\u001b[').entries()) {
     // Parse SGR chunks directly so reverse video can use the theme's defaults.
     const entry = parser.processChunkJson(index === 0 ? `0m${part}` : part, { use_classes: true }, true);

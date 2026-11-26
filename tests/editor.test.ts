@@ -44,6 +44,51 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('pasting into ANSI fences', () => {
+  function paste(view: EditorView, text: string): void {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', text);
+    view.contentDOM.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+  }
+
+  it.each([true, false])('encodes a pasted transcript inside an ANSI body (Live Preview=%s)', (livePreview) => {
+    const doc = 'Intro\n\n```sh\npwd\n```\n```ansi\nreplace me\n```\n';
+    const { view } = fixture(livePreview, doc);
+    const from = doc.indexOf('replace me');
+    const encoded = String.raw`\x1B[32mC:\\work\x09\x0Ddone\x1B[0m` + '\nnext';
+    view.dispatch({ selection: { anchor: from, head: from + 'replace me'.length } });
+    paste(view, '\x1b[32mC:\\work\t\rdone\x1b[0m\r\nnext');
+    expect(view.state.doc.toString()).toBe(doc.replace('replace me', encoded));
+    expect(view.state.selection.main).toMatchObject({ from: from + encoded.length, to: from + encoded.length });
+  });
+
+  it('encodes only the ANSI destination of a paste with multiple cursors', () => {
+    const doc = 'Outside\n\n```ansi\n\n```';
+    const { view } = fixture(false, doc);
+    view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.allowMultipleSelections.of(true)) });
+    view.dispatch({
+      selection: EditorSelection.create([EditorSelection.cursor(7), EditorSelection.cursor(view.state.doc.line(4).from)]),
+    });
+    paste(view, 'C:\\outside\n\x1b[31mred');
+    expect(view.state.doc.toString()).toBe('OutsideC:\\outside\n\n```ansi\n\\x1B[31mred\n```');
+  });
+
+  it.each([
+    ['explicit raw', '```ansi encoding:raw\n', 'output', '\n```'],
+    ['legacy raw', '```ansi\n\x1b[0m', 'output', '\n```'],
+    ['the opening fence', '```ansi title:', 'label', '\noutput\n```'],
+    ['the closing fence', '```ansi\noutput\n', '```', ''],
+    ['a selection crossing a fence', '```ansi\n', 'output\n```', ''],
+    ['another language', '```plaintext\n', 'output', '\n```'],
+  ])('does not convert a paste in %s', (_label, before, selected, after) => {
+    const { view } = fixture(false, before + selected + after);
+    const text = '\x1b[31mC:\\work\x1b[0m';
+    view.dispatch({ selection: { anchor: before.length, head: before.length + selected.length } });
+    paste(view, text);
+    expect(view.state.doc.toString()).toBe(before + text + after);
+  });
+});
+
 describe('live preview headers', () => {
   it('keeps adjacent commands separate while preserving inline prompts and output controls', () => {
     const doc = [
@@ -830,6 +875,23 @@ describe('live preview headers', () => {
     expect(write).toHaveBeenLastCalledWith('whoami');
     expect(view.dom.querySelector('.motto-output-toggle')?.getAttribute('aria-expanded')).toBe('true');
     expect(view.state.doc.toString()).toBe(doc.replace('pwd', 'whoami'));
+  });
+
+  it('refreshes paired ANSI output and copying when only the raw override changes', () => {
+    const source = String.raw`\x1B[32moutput\x1B[0m`;
+    const override = 'encoding:raw';
+    const doc = `Intro\n\n\`\`\`sh\npwd\n\`\`\`\n\`\`\`ansi expand ${override}\n${source}\n\`\`\``;
+    const { view } = fixture(true, doc);
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe(source);
+    view.dom.querySelector<HTMLButtonElement>('.motto-raw-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith(source);
+
+    const from = doc.indexOf(override);
+    view.dispatch({ changes: { from, to: from + override.length, insert: ' '.repeat(override.length) } });
+    expect(view.dom.querySelector('.motto-command-output code')?.textContent).toBe('output');
+    view.dom.querySelector<HTMLButtonElement>('.motto-raw-copy')!.click();
+    expect(write).toHaveBeenLastCalledWith('\x1b[32moutput\x1b[0m');
   });
 
   it.each(['expand', 'unfold'])('honors ANSI %s, maps its edit control through preceding edits and previews updated output', (option) => {

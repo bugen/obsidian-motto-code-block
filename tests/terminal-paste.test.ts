@@ -54,7 +54,8 @@ async function fixture(settings: Record<string, unknown> = {}) {
 
 it.each([true, false])('registers editor-only paste and inserts one adjacent Markdown session (keep=%s)', async (keep) => {
   const { editor, trigger, getMode } = await fixture();
-  const read = vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('custom!$ pwd\n\x1b[32m/work\x1b[0m\ncustom!$ ls');
+  const read = vi.spyOn(navigator.clipboard, 'readText')
+    .mockResolvedValue('custom!$ pwd\n\x1b[32m\tC:\\work\x1b[0m\ncustom!$ ls');
   getMode.mockReturnValue('preview');
   expect(trigger(keep, true)).toBe(false);
   getMode.mockReturnValue('source');
@@ -62,7 +63,7 @@ it.each([true, false])('registers editor-only paste and inserts one adjacent Mar
   expect(read).not.toHaveBeenCalled();
   expect(trigger(keep)).toBe(true);
   await vi.waitFor(() => {
-    const output = keep ? '```ansi\n\x1b[32m/work\x1b[0m\n```' : '```plaintext\n/work\n```';
+    const output = keep ? '```ansi\n\\x1B[32m\\x09C:\\\\work\\x1B[0m\n```' : '```plaintext\n\tC:\\work\n```';
     const info = '```bash cmd prompt-text:"custom!$" prompt-display:hide';
     expect(editor.replaceSelection).toHaveBeenCalledExactlyOnceWith(
       `\n${info}\npwd\n\`\`\`\n${output}\n${info}\nls\n\`\`\`\n\n`,
@@ -81,8 +82,30 @@ it.each([
     expect(editor.replaceSelection).toHaveBeenCalledOnce();
     const markdown = editor.replaceSelection.mock.calls[0]?.[0];
     expect(markdown).toContain(`\`\`\`${shell} cmd`);
-    expect(markdown).toContain(keep ? '```ansi\n\x1b[32mresult\x1b[0m\n```' : '```plaintext\nresult\n```');
+    expect(markdown).toContain(keep ? '```ansi\n\\x1B[32mresult\\x1B[0m\n```' : '```plaintext\nresult\n```');
     expect(markdown).toContain('\nls\n```');
+  });
+});
+
+it.each([true, false])('keeps styling that starts after the command echo (keep ANSI=%s)', async (keep) => {
+  const { editor, trigger } = await fixture();
+  const prompt = '\x1b[1m\x1b[32mdemo@node\x1b[22m\x1b[39m:\x1b[1m\x1b[34m~/work\x1b[22m\x1b[39m$';
+  vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue([
+    `${prompt} ^C\x1b[1m\x1b[32m`,
+    `${prompt} ls\x1b[1m\x1b[34m`,
+    'ascii\x1b[22m\x1b[39m    \x1b[1m\x1b[34msrc',
+    'lib\x1b[22m\x1b[39m',
+    `${prompt} cd\x1b[0m`,
+  ].join('\n'));
+  expect(trigger(keep)).toBe(true);
+  await vi.waitFor(() => {
+    const markdown = editor.replaceSelection.mock.calls[0]?.[0];
+    expect(markdown).toBe(
+      '\n```bash cmd prompt:"demo@node:~/work" prompt-display:hide\nls\n```\n' +
+      (keep ? '```ansi\n\\x1B[1m\\x1B[34mascii\\x1B[22m\\x1B[39m    \\x1B[1m\\x1B[34msrc\nlib\\x1B[22m\\x1B[39m\n```\n'
+        : '```plaintext\nascii    src\nlib\n```\n') +
+      '```bash cmd prompt:"demo@node:~/work" prompt-display:hide\ncd\n```\n\n',
+    );
   });
 });
 

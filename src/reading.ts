@@ -393,7 +393,7 @@ export class ReadingHeaders {
       });
       let output: ReadingOutputView;
       if (mount.layout instanceof ReadingOutputView && mount.layout.block.text === mount.block.text &&
-          mount.layout.block.language === mount.block.language &&
+          mount.layout.block.language === mount.block.language && mount.layout.block.ansiRaw === mount.block.ansiRaw &&
           mount.layout.block.lineCount === mount.block.lineCount) {
         output = mount.layout;
       } else {

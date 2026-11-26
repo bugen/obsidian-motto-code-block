@@ -1,5 +1,6 @@
 import { loadPrism, Notice, setIcon, setTooltip } from 'obsidian';
 import { ansiText, renderAnsi } from './ansi';
+import { decodeAnsiSource } from './ansi-text';
 import { copyCode, createExpandFooter } from './render';
 import type { CodeBlock } from './codeblock';
 import type { CommandPrompt } from './commands';
@@ -190,8 +191,9 @@ async function highlightOutput(code: HTMLElement): Promise<void> {
 }
 
 export function commandOutput(
-  document: Document, text: string, edit?: () => void, language = 'ansi', remove?: () => void,
+  document: Document, source: string, edit?: () => void, language = 'ansi', remove?: () => void, ansiRaw?: true,
 ): HTMLElement {
+  const text = language === 'ansi' ? decodeAnsiSource(source, ansiRaw) : source;
   const output = createEl(document, 'div');
   output.className = 'motto-ansi-view motto-command-output';
   const tools = output.createDiv();
@@ -221,7 +223,7 @@ export function commandOutputPreview(
   document: Document, block: CodeBlock, preview: number | undefined, expand: () => void, edit?: () => void,
   remove?: () => void,
 ): { element: HTMLElement; destroy: () => void } {
-  const element = commandOutput(document, block.text, edit, block.language, remove);
+  const element = commandOutput(document, block.text, edit, block.language, remove, block.ansiRaw);
   const pre = element.querySelector<HTMLElement>('pre')!;
   const code = pre.querySelector<HTMLElement>('code')!;
   const layout = preview !== undefined ? new ReadingCodeLayout(pre, code, block.lineCount, false, preview) : null;
@@ -235,7 +237,7 @@ export function commandOutputPreview(
 export function ansiPreview(
   document: Document, block: CodeBlock, settings: MottoSettings, preview: number | undefined, edit?: () => void,
 ): { element: HTMLElement; destroy: () => void } {
-  const element = commandOutput(document, block.text, edit);
+  const element = commandOutput(document, block.text, edit, 'ansi', undefined, block.ansiRaw);
   element.classList.replace('motto-command-output', 'motto-ansi-standalone');
   element.classList.toggle('motto-ansi-partial', preview !== undefined);
   const pre = element.querySelector<HTMLElement>('pre')!;

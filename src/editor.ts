@@ -1,6 +1,7 @@
-import { MapMode, Prec, StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
+import { EditorSelection, MapMode, Prec, StateEffect, StateField, Text, type EditorState, type Extension, type Range } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
 import { editorInfoField, editorLivePreviewField, Notice, type Editor } from 'obsidian';
+import { encodeAnsiSource, hasAnsiControls } from './ansi-text';
 import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
 import { applyHeaderStyles, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
@@ -294,7 +295,7 @@ class OutputWidget extends WidgetType {
 
   override eq(other: OutputWidget): boolean {
     return this.commandFrom === other.commandFrom && this.block.from === other.block.from &&
-      this.block.language === other.block.language &&
+      this.block.language === other.block.language && this.block.ansiRaw === other.block.ansiRaw &&
       this.block.startLine === other.block.startLine && this.block.text === other.block.text &&
       this.block.lineCount === other.block.lineCount && this.preview === other.preview && this.remove === other.remove;
   }
@@ -331,7 +332,8 @@ class AnsiWidget extends WidgetType {
   override eq(other: AnsiWidget): boolean {
     return this.block.from === other.block.from && this.block.to === other.block.to &&
       this.block.startLine === other.block.startLine && this.block.text === other.block.text &&
-      this.settings.lineNumbers === other.settings.lineNumbers && this.preview === other.preview;
+      this.block.ansiRaw === other.block.ansiRaw && this.settings.lineNumbers === other.settings.lineNumbers &&
+      this.preview === other.preview;
   }
 
   override toDOM(view: EditorView): HTMLElement {
@@ -350,6 +352,37 @@ class AnsiWidget extends WidgetType {
 function bodyStart(block: CodeBlock, state: EditorState): number {
   const line = block.startLine + 2;
   return line <= state.doc.lines ? state.doc.line(line).from : block.to;
+}
+
+function pasteAnsi(event: ClipboardEvent, view: EditorView, settings: MottoSettings): boolean {
+  const { state } = view;
+  const clipboard = event.clipboardData;
+  if (state.readOnly || !clipboard || clipboard.files.length > 0) return false;
+  const original = clipboard.getData('text/plain');
+  const text = original.replaceAll('\r\n', '\n');
+  if (!text.includes('\\') && !hasAnsiControls(text)) return false;
+  const bodies = parseCodeBlocks(state.doc.toString(), settings).blocks
+    .filter((block) => block.language === 'ansi' && !block.ansiRaw &&
+      isCodeBlockEnabled(block, settings) && !hasAnsiControls(block.text))
+    .map((block) => ({
+      from: state.doc.line(block.startLine + 1).to + 1,
+      to: block.unclosed ? block.to : state.doc.line(block.endLine).to,
+    }));
+  if (bodies.length === 0) return false;
+  const lines = text.split('\n');
+  const byLine = lines.length === state.selection.ranges.length;
+  let index = 0;
+  let converted = false;
+  const change = state.changeByRange(({ from, to }) => {
+    const input = byLine ? lines[index++]! : text;
+    const encoded = bodies.some((body) => from >= body.from && to <= body.to) ? encodeAnsiSource(input) : input;
+    converted ||= encoded !== input;
+    const insert = encoded !== input ? Text.of(encoded.split('\n')) : state.toText(byLine ? input : original);
+    return { changes: { from, to, insert }, range: EditorSelection.cursor(from + insert.length, -1) };
+  });
+  if (!converted) return false;
+  view.dispatch({ ...change, scrollIntoView: true, userEvent: 'input.paste' });
+  return true;
 }
 
 function editOutput(view: EditorView, block: CodeBlock, expand = false): void {
@@ -718,6 +751,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
   return {
     extension: [
       field,
+      Prec.high(EditorView.domEventHandlers({ paste: (event, view) => pasteAnsi(event, view, getSettings()) })),
       Prec.high(keymap.of([{
         key: 'Mod-a',
         run(view) {

@@ -49,6 +49,8 @@ In Live Preview, use the trash icon beside the pencil to delete only the output.
 
 Standalone `ansi` blocks show the ANSI logo when their header and icons are enabled. In any `ansi` preview, the copy icon copies plain text; **RAW** copies the full text with ANSI escape sequences.
 
+In Markdown, `ansi` blocks use `\xHH` for control characters (for example, `\x1B[31m`) and `\\` for a literal backslash. Line breaks stay as-is. Pasting terminal output directly into an `ansi` block in Live Preview or Source mode applies this encoding automatically. Blocks containing actual control characters other than line breaks, or marked `ansi encoding:raw`, are read as raw and pasted into without conversion.
+
 ## Command palette
 
 Search for **Motto Code Block** in the command palette. These display commands apply to the active note in Live Preview and Reading view without editing the note:
@@ -57,7 +59,9 @@ Search for **Motto Code Block** in the command palette. These display commands a
 - **Close all command outputs** / **Open all command outputs**: Change paired outputs even when their Command Blocks have no header. Opening also expands the parent Command Blocks and shows the full output.
 - **Reset block folding and output visibility**: Restore the defaults from the fence options and plugin settings.
 
-To paste a terminal session, copy the transcript starting with its first prompt. In Live Preview or Source mode, place the cursor outside existing code blocks and run **Paste terminal output (keep ANSI)** or **Paste terminal output (strip ANSI)**. Both create editable Markdown; the first preserves escape sequences in `ansi` output blocks, and the second writes plain output in `plaintext` blocks. A later prompt with no command but with output, such as `logout` after Ctrl+D, becomes an empty Command Block with its own output. Its copy icon is disabled because there is no command to copy. In Live Preview, use the pencil on the prompt row to edit the empty command. A prompt with neither command nor output is omitted.
+To paste a terminal session, copy the transcript starting with its first prompt. In Live Preview or Source mode, place the cursor outside existing code blocks and run **Paste terminal output (keep ANSI)** or **Paste terminal output (strip ANSI)**. Both create editable Markdown; the first stores ANSI output with escaped control characters in `ansi` blocks, and the second writes plain output in `plaintext` blocks. A later prompt with no command but with output, such as `logout` after Ctrl+D, becomes an empty Command Block with its own output. Its copy icon is disabled because there is no command to copy. In Live Preview, use the pencil on the prompt row to edit the empty command. A prompt with neither command nor output is omitted.
+
+**Keep ANSI** also preserves color and style codes at the end of a command line that apply to the following output.
 
 If automatic detection picks the wrong shell, use **Paste Bash terminal output** (shell prompts ending in `$`, `#`, or `%`) or **Paste PowerShell terminal output** (`>` prompts). Both are available with **keep ANSI** and **strip ANSI**. The detected prompt is saved with each command; hover over its symbol to see the full text.
 

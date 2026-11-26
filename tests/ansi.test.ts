@@ -4,6 +4,7 @@ import { URL as NodeURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import './obsidian';
 import { ansiText, renderAnsi } from '../src/ansi';
+import { decodeAnsiSource, encodeAnsiSource } from '../src/ansi-text';
 
 beforeEach(() => {
   const stylesheet = document.createElement('style');
@@ -23,6 +24,25 @@ function render(text: string) {
   document.body.append(code);
   return code;
 }
+
+describe('ANSI Markdown storage', () => {
+  it('round-trips control characters and literal escapes without changing newlines or Unicode', () => {
+    const raw = '\x1b[31m色\t\x00\x07\x7f\x9b0m\r' + String.raw`C:\temp \\server \x1B` + '\nnext';
+    const encoded = String.raw`\x1B[31m色\x09\x00\x07\x7F\x9B0m\x0DC:\\temp \\\\server \\x1B` + '\nnext';
+    expect(encodeAnsiSource(raw)).toBe(encoded);
+    expect(decodeAnsiSource(encoded)).toBe(raw);
+  });
+
+  it('uses the entire block as raw if it already contains a control character', () => {
+    const mixed = '\x9b31mcolor\n' + String.raw`\\server \x1b[0m`;
+    expect(decodeAnsiSource(mixed)).toBe(mixed);
+  });
+
+  it('leaves unrecognized escapes literal and does not create source line breaks', () => {
+    const text = String.raw`\q \x \xJG \x41 \x0A` + '\n' + String.raw`\x1b[31m`;
+    expect(decodeAnsiSource(text)).toBe(String.raw`\q \x \xJG \x41 \x0A` + '\n\x1b[31m');
+  });
+});
 
 describe('static ANSI output', () => {
   it('renders colors, truecolor, decorations and resets without bleeding into earlier text', () => {

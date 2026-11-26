@@ -33,6 +33,7 @@ export interface CodeBlock {
   headerStyle?: string;
   fold?: boolean;
   previewLines?: number;
+  ansiRaw?: true;
   text: string;
 }
 
@@ -54,7 +55,7 @@ export function parseInfo(info: string): {
   exclude?: boolean;
   explicitCommand?: true;
   context?: TerminalContext;
-  headerStyle?: string; fold?: boolean; previewLines?: number; diagnostics: string[];
+  headerStyle?: string; fold?: boolean; previewLines?: number; ansiRaw?: true; diagnostics: string[];
 } {
   const languageMatch = /^([^\s:=]+)(?=\s|$)/.exec(info.trimStart());
   const firstToken = languageMatch?.[1]?.toLowerCase() ?? '';
@@ -76,11 +77,12 @@ export function parseInfo(info: string): {
     const key = options.slice(start, index).toLowerCase();
     while (index < options.length && /\s/.test(options[index]!)) index++;
     const hasValue = options[index] === ':' || options[index] === '=';
-    const valueKey = valueOptions.get(key);
+    const valueKey = key === 'encoding' && language === 'ansi' ? key : valueOptions.get(key);
     if (hasValue && (valueKey === 'prompt' || valueKey === 'prompt-text' ||
       valueKey === 'user' || valueKey === 'host' || valueKey === 'cwd')) {
       hasPromptParameters = true;
-    } else if (foldOptions.has(key) || (hasValue && valueKey !== undefined && valueKey !== 'prompt-display')) {
+    } else if (foldOptions.has(key) ||
+      (hasValue && valueKey !== undefined && valueKey !== 'prompt-display' && valueKey !== 'encoding')) {
       hasParameters = true;
     }
     if (!hasValue) {
@@ -90,6 +92,7 @@ export function parseInfo(info: string): {
       } else if (key === 'cmd' || key === 'command') command = true;
       else if (key === 'exclude') exclude = true;
       else if (key === 'prompt-display') diagnostics.push('The "prompt-display" option requires "inline" or "hide".');
+      else if (valueKey === 'encoding') diagnostics.push('The "encoding" option requires "raw".');
       continue;
     }
     index++;
@@ -154,6 +157,8 @@ export function parseInfo(info: string): {
   else if (promptDisplay !== undefined) {
     diagnostics.push('Invalid "prompt-display" value. Use "inline" or "hide".');
   }
+  const encoding = values.get('encoding')?.toLowerCase();
+  if (encoding !== undefined && encoding !== 'raw') diagnostics.push('Invalid "encoding" value. Use "raw".');
   return {
     language,
     title: values.get('file') || values.get('title') || '',
@@ -164,6 +169,7 @@ export function parseInfo(info: string): {
     ...(validStyle ? { headerStyle } : {}),
     ...(fold !== undefined ? { fold } : {}),
     ...(previewLines !== undefined ? { previewLines } : {}),
+    ...(encoding === 'raw' ? { ansiRaw: true } : {}),
     diagnostics,
   };
 }
@@ -238,6 +244,7 @@ export function parseCodeBlocks(
         ...(info.headerStyle !== undefined ? { headerStyle: info.headerStyle } : {}),
         ...(info.fold !== undefined ? { fold: info.fold } : {}),
         ...(info.previewLines !== undefined ? { previewLines: info.previewLines } : {}),
+        ...(info.ansiRaw ? { ansiRaw: true } : {}),
         text: node.getChildren('CodeText').map((part) => {
           let end = base + part.to;
           if (source[end - 1] === '\r' && source[end] === '\n') end--;
