@@ -1,9 +1,6 @@
+import { hippoSpeechTextColor, randomHippoColor } from './hippo-colors';
 import type { MottoSettings } from './settings';
 
-const COLORS = [
-  '#356ea6', '#0b8278', '#5e7d20', '#976c00', '#b95b0c',
-  '#c45231', '#cc4449', '#c0477f', '#9256c6', '#3e72c5',
-] as const;
 const REPLIES = [
   'You rang?',
   'Ah. There it is.',
@@ -18,6 +15,15 @@ const REPLIES = [
 ] as const;
 const speeches = new WeakMap<HTMLButtonElement, HippoSpeech>();
 
+interface OutputToggle {
+  open: boolean;
+  styles: MottoSettings['outputToggleStyles'];
+}
+
+interface FarmSpeech {
+  color: string;
+}
+
 function randomBetween(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
@@ -25,9 +31,10 @@ function randomBetween(min: number, max: number): number {
 class HippoSpeech {
   private readonly button: HTMLButtonElement;
   private readonly window: NonNullable<Document['defaultView']>;
-  private readonly observer: MutationObserver;
-  private styles: MottoSettings['outputToggleStyles'];
-  private open: boolean;
+  private readonly observer: MutationObserver | undefined;
+  private readonly scale: number;
+  private readonly farm: FarmSpeech | undefined;
+  private output: OutputToggle | undefined;
   private shown = false;
   private disposed = false;
   private nextTimer: number | undefined;
@@ -36,27 +43,33 @@ class HippoSpeech {
   private bubble: HTMLDivElement | undefined;
   private phase: 'prompt' | 'response' | undefined;
 
-  constructor(button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles']) {
+  constructor(button: HTMLButtonElement, output: OutputToggle | undefined, farm: FarmSpeech | undefined) {
     const window = button.ownerDocument.defaultView;
     if (!window) throw new Error('[Motto Code Block] Hippo speech requires a document window.');
     this.button = button;
     this.window = window;
-    this.open = open;
-    this.styles = styles;
-    this.observer = new window.MutationObserver(this.sync);
-    this.observer.observe(button.ownerDocument.body, { attributes: true, attributeFilter: ['class'] });
+    this.output = output;
+    this.farm = farm;
+    this.scale = output || farm ? 1 : 3;
+    if (output) {
+      this.observer = new window.MutationObserver(this.sync);
+      this.observer.observe(button.ownerDocument.body, { attributes: true, attributeFilter: ['class'] });
+    }
     button.ownerDocument.addEventListener('visibilitychange', this.sync);
     this.sync();
   }
 
-  update(open: boolean, styles: MottoSettings['outputToggleStyles']): void {
-    this.open = open;
-    this.styles = styles;
+  update(output: OutputToggle | undefined): void {
+    this.output = output;
     this.sync();
   }
 
   reply(): void {
-    if (this.phase !== 'prompt' || !this.available() || this.open) return;
+    if (!this.available() || this.output?.open) return;
+    if (this.phase !== 'prompt') {
+      if (this.bubble && this.farm?.color === 'same') this.setBubbleColor(this.bubble);
+      return;
+    }
     this.cancelNext();
     this.show(REPLIES[randomBetween(0, REPLIES.length - 1)]!, 'response');
   }
@@ -65,21 +78,23 @@ class HippoSpeech {
     this.disposed = true;
     this.cancelNext();
     this.hide();
-    this.observer.disconnect();
+    this.observer?.disconnect();
     this.button.ownerDocument.removeEventListener('visibilitychange', this.sync);
   }
 
   private available(): boolean {
     const document = this.button.ownerDocument;
+    if (this.disposed || document.hidden) return false;
+    if (!this.output) return true;
     const mode = document.body.classList.contains('theme-dark') ? 'dark' : 'light';
-    return !this.disposed && !document.hidden && this.styles[mode].icon === 'hippo';
+    return this.output.styles[mode].icon === 'hippo';
   }
 
   private readonly sync = (): void => {
     if (!this.available()) {
       this.cancelNext();
       this.hide();
-    } else if (this.open) {
+    } else if (this.output?.open) {
       this.cancelNext();
       // The reply deliberately outlives the click that opens the output.
       if (this.phase !== 'response') this.hide();
@@ -93,7 +108,7 @@ class HippoSpeech {
     this.nextTimer = this.window.setTimeout(() => {
       this.nextTimer = undefined;
       if (!this.button.isConnected) { this.destroy(); return; }
-      if (this.available() && !this.open) this.show('Tap my hip-po!', 'prompt');
+      if (this.available() && !this.output?.open) this.show(this.farm ? 'Tap to hip-po!' : 'Tap my hip-po!', 'prompt');
       this.sync();
     }, delay);
   }
@@ -116,18 +131,22 @@ class HippoSpeech {
 
   private show(text: string, phase: 'prompt' | 'response'): void {
     if (!this.anchor()) return;
+    if (this.farm && phase === 'prompt' &&
+        this.button.parentElement?.querySelector('[data-motto-hippo-speaking]')) return;
     this.window.clearTimeout(this.hideTimer);
     if (!this.bubble) {
       this.bubble = this.button.ownerDocument.body.createDiv();
       this.bubble.className = 'motto-hippo-speech';
       this.bubble.dataset.motion = 'enter';
       this.bubble.setAttribute('aria-hidden', 'true');
+      this.bubble.style.setProperty('--motto-hippo-speech-scale', String(this.scale));
     } else if (this.bubble.dataset.motion === 'exit') this.bubble.dataset.motion = 'idle';
     this.shown = true;
     this.phase = phase;
+    if (this.farm) this.button.dataset.mottoHippoSpeaking = '';
     this.bubble.dataset.phase = phase;
     this.bubble.textContent = text;
-    this.bubble.style.setProperty('--motto-hippo-bubble-color', COLORS[randomBetween(0, COLORS.length - 1)]!);
+    this.setBubbleColor(this.bubble);
     if (this.frame !== undefined) this.window.cancelAnimationFrame(this.frame);
     this.position();
     this.hideTimer = this.window.setTimeout(() => {
@@ -137,6 +156,13 @@ class HippoSpeech {
         this.sync();
       }, 100);
     }, 3_900);
+  }
+
+  private setBubbleColor(bubble: HTMLDivElement): void {
+    const choice = this.farm?.color ?? 'random';
+    const color = choice === 'random' ? randomHippoColor() : choice === 'same' ? this.button.style.color : choice;
+    bubble.style.setProperty('--motto-hippo-bubble-color', color);
+    if (choice !== 'random') bubble.style.color = hippoSpeechTextColor(color);
   }
 
   private readonly position = (): void => {
@@ -149,12 +175,19 @@ class HippoSpeech {
     const height = bubble.offsetHeight;
     const center = anchor.left + anchor.width / 2;
     const left = Math.max(8, Math.min(center - width / 2, this.window.innerWidth - width - 8));
-    const below = anchor.top < height + 16;
-    const top = below ? anchor.bottom + 10 : anchor.top - height - 10;
+    const gap = 6 * this.scale + 4;
+    const aboveSpace = anchor.top - gap - 6;
+    const belowSpace = this.window.innerHeight - anchor.bottom - gap - 6;
+    const below = aboveSpace < height && (this.scale === 1 || belowSpace >= aboveSpace);
+    const top = below ? anchor.bottom + gap : anchor.top - height - gap;
+    const tailEdge = Math.max(8, gap - 2);
+    const minTop = below ? tailEdge : 8;
+    const maxTop = this.window.innerHeight - height - (below ? 8 : tailEdge);
+    const tailInset = Math.min(12 * this.scale, width / 2);
     bubble.dataset.side = below ? 'below' : 'above';
     bubble.style.left = `${left}px`;
-    bubble.style.top = `${Math.max(8, Math.min(top, this.window.innerHeight - height - 8))}px`;
-    bubble.style.setProperty('--motto-hippo-tail-left', `${Math.max(12, Math.min(center - left, width - 12))}px`);
+    bubble.style.top = `${Math.max(minTop, Math.min(top, maxTop))}px`;
+    bubble.style.setProperty('--motto-hippo-tail-left', `${Math.max(tailInset, Math.min(center - left, width - tailInset))}px`);
     this.frame = this.window.requestAnimationFrame(this.position);
   };
 
@@ -166,18 +199,18 @@ class HippoSpeech {
     this.bubble?.remove();
     this.bubble = undefined;
     this.phase = undefined;
+    if (this.farm) delete this.button.dataset.mottoHippoSpeaking;
   }
 }
 
-export function updateHippoSpeech(
-  button: HTMLButtonElement, open: boolean, styles: MottoSettings['outputToggleStyles'], enabled: boolean,
-): void {
+export function updateHippoSpeech(button: HTMLButtonElement, enabled: boolean, target?: OutputToggle | FarmSpeech): void {
+  const output = target && 'styles' in target ? target : undefined;
   const existing = speeches.get(button);
-  if (!enabled || (styles.light.icon !== 'hippo' && styles.dark.icon !== 'hippo')) {
+  if (!enabled || (output && output.styles.light.icon !== 'hippo' && output.styles.dark.icon !== 'hippo')) {
     existing?.destroy();
     speeches.delete(button);
-  } else if (existing) existing.update(open, styles);
-  else speeches.set(button, new HippoSpeech(button, open, styles));
+  } else if (existing) existing.update(output);
+  else speeches.set(button, new HippoSpeech(button, output, target && 'color' in target ? target : undefined));
 }
 
 export function replyToHippo(button: HTMLButtonElement): void {

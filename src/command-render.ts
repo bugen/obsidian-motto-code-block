@@ -150,7 +150,7 @@ export function setOutputToggle(
     if (style.overrideColor) button.style.setProperty(property, style.color);
     else button.style.removeProperty(property);
   }
-  updateHippoSpeech(button, closes, styles, tapMyHippo);
+  updateHippoSpeech(button, tapMyHippo, { open: closes, styles });
 }
 
 export function commandTools(

@@ -529,6 +529,8 @@ body.theme-dark .motto-command-header {
 
 pre.motto-command-native,
 .markdown-rendered pre.motto-command-native,
+pre.motto-hippo-native,
+.markdown-rendered pre.motto-hippo-native,
 .motto-command-view .copy-code-button,
 .motto-ansi-view .copy-code-button,
 .markdown-source-view.mod-cm6 .motto-command-start .code-block-flair {
@@ -729,7 +731,7 @@ body.theme-dark .motto-output-wide-dark {
   --motto-output-toggle-extra-width: 8px;
 }
 
-:is(.motto-command-tools, .motto-output-tools, .motto-header-controls) > button.motto-command-button {
+:is(.motto-command-tools, .motto-output-tools, .motto-header-controls, .motto-hippo-tools) > button.motto-command-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -749,7 +751,7 @@ body.theme-dark .motto-output-wide-dark {
 }
 
 .motto-command-button svg.svg-icon { display: block; width: 14px; height: 14px; }
-:is(.motto-command-tools, .motto-output-tools, .motto-header-controls) > button.motto-command-button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+:is(.motto-command-tools, .motto-output-tools, .motto-header-controls, .motto-hippo-tools) > button.motto-command-button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
 
 .motto-command-view.motto-session-menu-side,
 .motto-header.motto-session-menu-side {
@@ -837,19 +839,129 @@ body.theme-dark .motto-output-icon-dark { display: inline-flex; }
 
 .motto-output-hippo-flipped { transform: scaleX(-1); }
 
+.motto-hippo-block {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.markdown-preview-view .motto-hippo-block { margin-block: 0.75em; }
+
+:is(.motto-hippo-block, .motto-hippo-field) > button.motto-hippo-tap {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  box-shadow: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.motto-hippo-mark {
+  display: block;
+  width: 100%;
+  aspect-ratio: 640 / 440.05;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+.motto-hippo-tap:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+
+.motto-hippo-farm {
+  box-sizing: border-box;
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--code-radius, 8px);
+  background: radial-gradient(circle, var(--background-modifier-border) 1px, transparent 1.5px)
+    2px 2px / 18px 18px var(--motto-farm-color, var(--code-background, var(--background-secondary)));
+}
+
+.motto-hippo-field {
+  --motto-farm-hippo-width: min(var(--motto-farm-hippo-size), max(0px, 100cqw - 10px));
+  position: absolute;
+  inset: calc(var(--motto-farm-hippo-width) * 0.345 + 5px) calc(var(--motto-farm-hippo-width) / 2 + 5px);
+  isolation: isolate;
+}
+
+.motto-hippo-farm > .motto-hippo-field > button.motto-hippo-tap {
+  position: absolute;
+  width: var(--motto-farm-hippo-width);
+  max-width: none;
+  transform: translate(-50%, -50%);
+  transition: left var(--motto-hippo-step-time, 0ms) linear, top var(--motto-hippo-step-time, 0ms) linear;
+}
+
+.motto-hippo-tap[data-facing="left"] > .motto-hippo-mark { transform: scaleX(-1); }
+.motto-hippo-field > .motto-hippo-tap:is([data-motto-hippo-speaking], :focus-visible) { z-index: 1; }
+
+.motto-hippo-farm-dialog {
+  box-sizing: border-box;
+  width: min(36rem, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px;
+  overflow: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font: var(--font-ui-small, 14px)/1.5 var(--font-interface, sans-serif);
+}
+
+.motto-hippo-farm-dialog::backdrop { background: rgb(0 0 0 / 40%); }
+.motto-hippo-farm-dialog h2 { margin-block-start: 0; }
+.motto-hippo-farm-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.motto-hippo-farm-dialog dd { margin: 0 0 0.5em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .motto-hippo-farm > .motto-hippo-field > button.motto-hippo-tap { transition: none; }
+}
+
+.motto-hippo-tools {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  display: flex;
+  gap: 2px;
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-primary);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.motto-hippo-block:is(:hover, :has(:focus-visible)) > .motto-hippo-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.motto-hippo-tools > button.motto-command-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 .motto-hippo-speech {
+  --motto-hippo-tail-size: calc(6px * var(--motto-hippo-speech-scale));
   position: fixed;
   z-index: var(--layer-popover, 200);
+  box-sizing: border-box;
   width: max-content;
-  max-width: min(260px, calc(100vw - 16px));
-  padding: 8px 12px;
+  max-width: min(calc(260px * var(--motto-hippo-speech-scale)), calc(100vw - 16px));
+  padding: calc(8px * var(--motto-hippo-speech-scale)) calc(12px * var(--motto-hippo-speech-scale));
   border: none;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--motto-hippo-speech-scale));
   margin: 0;
   background: var(--motto-hippo-bubble-color);
   box-shadow: 0 3px 12px rgb(0 0 0 / 18%);
   color: #fff;
-  font: 500 12px/1.5 var(--font-interface);
+  font: 500 calc(12px * var(--motto-hippo-speech-scale))/1.5 var(--font-interface);
   overflow-wrap: anywhere;
   white-space: normal;
   pointer-events: none;
@@ -883,8 +995,8 @@ body.theme-dark .motto-output-icon-dark { display: inline-flex; }
   content: "";
   position: absolute;
   top: 100%;
-  left: calc(var(--motto-hippo-tail-left) - 6px);
-  border: 6px solid transparent;
+  left: calc(var(--motto-hippo-tail-left) - var(--motto-hippo-tail-size));
+  border: var(--motto-hippo-tail-size) solid transparent;
   border-top-color: var(--motto-hippo-bubble-color);
 }
 

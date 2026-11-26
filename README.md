@@ -120,6 +120,42 @@ python manhattan_distance_contours.py
 
 ![Command Block displaying the output of a Python script](./screenshots/mdc_plot.png)
 
+## Hippo blocks
+
+Use `hippo big` to display a randomly colored hippo that fits the note's content area in Reading view and Live Preview. Tap it to change its color. In Live Preview, hover over the hippo or move keyboard focus to it to find the edit and delete icons.
+
+In Live Preview or Source mode, run **Motto Code Block: Hippo Big** from the command palette to insert the example below at the cursor.
+
+Enable **Tap my hip-po!** to see occasional speech bubbles sized to match Big Hippo. Tap the hippo while the invitation is visible to get a reply.
+
+````markdown
+```hippo big
+Sorry... To see this block, open this note in Obsidian with the Motto Code Block plugin installed.
+https://github.com/bugen/obsidian-motto-code-block
+```
+````
+
+Use `hippo farm` for a herd that wanders and rests. Run **Motto Code Block: Hippo Farm** from the command palette to insert a fence with all defaults and the same fallback message as Hippo Big. Hover over the farm to reveal **?** in the upper-right corner, then click it to see the available options. For example:
+
+````markdown
+```hippo farm hippo_num=18 hippo_size=40px hippo_speed=4 farm_height=360px farm_color=green tap_my_hippo=true speech_bubble_color=same
+```
+````
+
+| Option | Range | Default |
+| --- | --- | --- |
+| `hippo_num` | 1–30 hippos | 10 |
+| `hippo_size` | 16–96 pixels wide; shrinks to fit a narrow pane | 46 px |
+| `hippo_speed` | 1–5, slowest to fastest | 3 |
+| `hippo_color` | `random` or a solid color | `random` |
+| `farm_height` | 120–800 pixels | 240 px |
+| `farm_color` | `default` (theme background) or a solid color | `default` |
+| `tap_my_hippo` | `true` or `false` | Inherits **Tap my hip-po!** from settings |
+| `speech_bubble_color` | `same` (matches its hippo), `random`, or a solid color | `same` |
+
+Use named colors or RGB values such as `#58a`, `#5588aa`, or `rgb(85, 136, 170)`. The palette names are `blue`, `teal` (also `cyan`), `green`, `yellow`, `orange`, `rust`, `red`, `pink`, `purple`, and `indigo`; `black`, `white`, and `gray` are also available. For `farm_color`, Obsidian's theme colors take precedence for `red`, `orange`, `yellow`, `green`, `cyan`, `blue`, `purple`, and `pink`.
+
+The `px` suffix is optional. Out-of-range numbers are clamped; missing or invalid values use the defaults. When speech is enabled, tap the hippo with the invitation to get a reply.
 
 ## Theme and plugin compatibility
 

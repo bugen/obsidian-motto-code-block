@@ -10,7 +10,7 @@ import type { SessionMenu } from './session-menu';
 export function matchesReadingCode(block: CodeBlock, renderedText?: string): boolean {
   const text = renderedText?.replaceAll('\r\n', '\n');
   if (text === block.text || text === `${block.text}\n`) return true;
-  return Boolean(block.terminal?.output && !block.text.trim() && !text?.trim());
+  return Boolean((block.terminal?.output || block.hippoFarm) && !block.text.trim() && !text?.trim());
 }
 
 export class ReadingCommandView {

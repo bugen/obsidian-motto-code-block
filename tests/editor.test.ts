@@ -96,6 +96,107 @@ describe('pasting into ANSI fences', () => {
 });
 
 describe('live preview headers', () => {
+  it('applies edited Farm options in Live Preview and preserves the source in Source mode', () => {
+    const doc = 'Intro\n\n```hippo farm hippo_num=2 farm_height=320 hippo_speed=1 hippo_size=40 hippo_color=blue\n```';
+    const { view } = fixture(true, doc);
+    const farm = () => view.dom.querySelector<HTMLElement>('.motto-hippo-farm');
+    expect(farm()?.style.height).toBe('320px');
+    expect(farm()?.querySelectorAll('.motto-hippo-tap')).toHaveLength(2);
+    const from = doc.indexOf('hippo_num=2');
+    view.dispatch({ changes: { from, to: from + 'hippo_num=2'.length, insert: 'hippo_num=4' } });
+    expect(farm()?.querySelectorAll('.motto-hippo-tap')).toHaveLength(4);
+    const colorFrom = view.state.doc.toString().indexOf('blue');
+    view.dispatch({ changes: { from: colorFrom, to: colorFrom + 4, insert: 'red' } });
+    const hippo = farm()?.querySelector<HTMLButtonElement>('.motto-hippo-tap');
+    expect(hippo?.style.color).toBe('#cc4449');
+    hippo?.click();
+    expect(hippo?.style.color).toBe('#cc4449');
+    expect(farm()?.style.getPropertyValue('--motto-farm-hippo-size')).toBe('40px');
+    view.dispatch({ effects: setLivePreview.of(false) });
+    expect(farm()).toBeNull();
+    expect(view.contentDOM.textContent).toContain('hippo_num=4 farm_height=320 hippo_speed=1 hippo_size=40 hippo_color=red');
+  });
+
+  it('opens Farm options from the Live Preview toolbar without selecting or editing the fence', () => {
+    const doc = 'Intro\n\n```hippo farm\n```';
+    const { view } = fixture(true, doc);
+    const buttons = [...view.dom.querySelectorAll<HTMLButtonElement>('.motto-hippo-tools > button')];
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Hippo Farm options', 'Edit Hippo block', 'Delete Hippo block',
+    ]);
+    const help = buttons[0]!;
+    help.click();
+    const dialog = view.dom.querySelector('dialog')!;
+    expect(dialog.open).toBe(true);
+    dialog.querySelector('h2')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(dialog.open).toBe(false);
+    expect(view.state.selection.main.head).toBe(0);
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
+  it('shows only tappable Hippo artwork and icon controls until its fence is edited or Source mode is enabled', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const doc = 'Intro\n\n```hippo big\nPlugin required.\n```\n\nOutro';
+    const { view } = fixture(true, doc, { ...DEFAULT_SETTINGS, tapMyHippo: true });
+    const preview = view.dom.querySelector('.motto-hippo-block')!;
+    const tap = preview.querySelector<HTMLButtonElement>('.motto-hippo-tap')!;
+    tap.click();
+    expect(preview.textContent).toBe('');
+    expect([...preview.querySelectorAll('.motto-hippo-tools svg')].map((svg) => svg.getAttribute('data-icon')))
+      .toEqual(['pencil', 'trash-2']);
+    expect(view.contentDOM.textContent).not.toContain('Plugin required.');
+    expect(view.state.doc.toString()).toBe(doc);
+
+    preview.querySelector<HTMLButtonElement>('[aria-label="Edit Hippo block"]')!.click();
+    expect(view.state.selection.main.head).toBe(doc.indexOf('```'));
+    expect(view.dom.querySelector('.motto-hippo-block')).toBeNull();
+    expect(view.contentDOM.textContent).toContain('Plugin required.');
+    view.dispatch({ selection: { anchor: doc.length } });
+    expect(view.dom.querySelector('.motto-hippo-block')).not.toBeNull();
+    view.dispatch({ effects: setLivePreview.of(false) });
+    expect(view.dom.querySelector('.motto-hippo-block')).toBeNull();
+    expect(view.contentDOM.textContent).toContain('Plugin required.');
+  });
+
+  it.each([0, 1])('deletes only the chosen Hippo block, including at the end of the note (%s)', (index) => {
+    const hippos = ['```hippo big\nFirst fallback.\n```', '```hippo big\nSecond fallback.\n```'];
+    const before = 'Intro\n\n';
+    const { view } = fixture(true, before + hippos.join('\n'));
+    const buttons = view.dom.querySelectorAll<HTMLButtonElement>('[aria-label="Delete Hippo block"]');
+    expect(buttons).toHaveLength(2);
+    buttons[index]!.click();
+    expect(view.state.doc.toString()).toBe(before + hippos[1 - index]);
+  });
+
+  it('starts and stops Big Hippo speech in Live Preview without remounting its artwork', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const doc = 'Intro\n\n```hippo big\nFallback\n```';
+    const { view, updateSettings } = fixture(true, doc);
+    const button = view.dom.querySelector<HTMLButtonElement>('.motto-hippo-tap')!;
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 120, 400, 275));
+    const bubble = () => document.querySelector('.motto-hippo-speech');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(bubble()).toBeNull();
+    const settings = { ...DEFAULT_SETTINGS, tapMyHippo: true };
+    updateSettings(settings);
+    expect(view.dom.querySelector('.motto-hippo-tap')).toBe(button);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(bubble()?.textContent).toBe('Tap my hip-po!');
+    button.click();
+    expect(bubble()?.textContent).toBe('You rang?');
+    updateSettings(DEFAULT_SETTINGS);
+    expect(bubble()).toBeNull();
+    updateSettings(settings);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(bubble()).not.toBeNull();
+    button.parentElement!.querySelector<HTMLButtonElement>('[aria-label="Edit Hippo block"]')!.click();
+    expect(bubble()).toBeNull();
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(bubble()).toBeNull();
+    expect(view.state.doc.toString()).toBe(doc);
+  });
+
   it('toggles the menu from its trigger even if Obsidian dismisses it before the click', () => {
     const { view } = fixture(true, '```sh cmd\npwd\n```\n```sh cmd\nls\n```');
     const button = view.dom.querySelector<HTMLButtonElement>('.motto-session-menu')!;

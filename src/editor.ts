@@ -2,7 +2,7 @@ import { EditorSelection, MapMode, Prec, StateEffect, StateField, Text, type Edi
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
 import { editorInfoField, editorLivePreviewField, Notice, type Editor } from 'obsidian';
 import { encodeAnsiSource, hasAnsiControls } from './ansi-text';
-import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, updatePromptDisplayInfo, type CodeBlock } from './codeblock';
+import { isCodeBlockEnabled, isHippoBlock, parseCodeBlocks, reportDiagnostics, updatePromptDisplayInfo, type CodeBlock, type HippoFarmOptions } from './codeblock';
 import { applyHeaderStyles, copyCode, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 import { createLineNumber, lineNumberWidth, shouldShowLineNumbers } from './line-numbers';
@@ -10,6 +10,8 @@ import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, 
 import { formatCommandPrompt, splitCommands, type CommandPrompt, type CommandRange } from './commands';
 import { ansiPreview, commandOutputPreview, commandPrompt, commandTools, inlinePromptColorClasses, outputToggleClasses, setOutputToggle, terminalDeleteButton, terminalEditButton } from './command-render';
 import { destroyHippoSpeech } from './hippo-speech';
+import { HippoBlockView } from './hippo-block';
+import { sameFarm } from './hippo-farm';
 import { createEl } from './dom';
 import { forcesPromptHeader, SessionMenu, withSessionPrompt, type SessionMenuActions, type SessionOutputAction, type SessionPromptMode } from './session-menu';
 
@@ -35,6 +37,7 @@ const changeSessionOutputs = StateEffect.define<{ from: number; action: SessionO
 const changeSessionPrompt = StateEffect.define<{ from: number; mode: SessionPromptMode | null }>();
 
 type DeleteTerminalBlock = (view: EditorView, commandFrom: number, scope: 'block' | 'output') => void;
+type DeleteBlock = (view: EditorView, from: number, scope: 'block' | 'output' | 'hippo') => void;
 type GetSessionActions = (view: EditorView, from: number) => SessionMenuActions | undefined;
 const deleteBlockLabel = 'Delete command block and its output';
 const applyPromptEvent = 'motto.apply-session-prompt';
@@ -500,6 +503,51 @@ class AnsiWidget extends WidgetType {
   }
 }
 
+class HippoWidget extends WidgetType {
+  private static readonly views = new WeakMap<HTMLElement, HippoBlockView>();
+  private readonly speak: boolean;
+  private readonly farm: HippoFarmOptions | undefined;
+  private readonly remove: DeleteBlock | undefined;
+
+  constructor(speak: boolean, farm?: HippoFarmOptions, remove?: DeleteBlock) {
+    super();
+    this.speak = speak;
+    this.farm = farm;
+    this.remove = remove;
+  }
+
+  override eq(other: HippoWidget): boolean {
+    return this.speak === other.speak && this.remove === other.remove && sameFarm(this.farm, other.farm);
+  }
+
+  override updateDOM(element: HTMLElement, _view: EditorView, previous: HippoWidget): boolean {
+    if (this.remove !== previous.remove || !sameFarm(this.farm, previous.farm)) return false;
+    const preview = HippoWidget.views.get(element);
+    if (!preview) return false;
+    preview.setSpeech(this.speak);
+    return true;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const remove = this.remove;
+    const preview = new HippoBlockView(view.dom.ownerDocument, this.farm, remove ? {
+      edit: () => {
+        view.dispatch({ selection: { anchor: view.posAtDOM(preview.element) }, scrollIntoView: true });
+        view.focus();
+      },
+      remove: () => { remove(view, view.posAtDOM(preview.element), 'hippo'); },
+    } : undefined);
+    preview.setSpeech(this.speak);
+    HippoWidget.views.set(preview.element, preview);
+    return preview.element;
+  }
+
+  override destroy(element: HTMLElement): void {
+    HippoWidget.views.get(element)?.dispose();
+    HippoWidget.views.delete(element);
+  }
+}
+
 function bodyStart(block: CodeBlock, state: EditorState): number {
   const line = block.startLine + 2;
   return line <= state.doc.lines ? state.doc.line(line).from : block.to;
@@ -622,11 +670,19 @@ function foldedBlocks(
 function decorate(
   blocks: CodeBlock[], settings: MottoSettings, folds: Map<number, FoldState>, state: EditorState,
   outputs: Map<number, OutputState>, ansiEditing: Set<number>, commandWraps: Map<number, boolean>,
-  sessionPrompts: Map<number, SessionPromptMode>, remove: DeleteTerminalBlock, getSessionActions: GetSessionActions,
+  sessionPrompts: Map<number, SessionPromptMode>, remove: DeleteBlock, getSessionActions: GetSessionActions,
 ): Pick<HeaderState, 'decorations' | 'commandScrolls'> {
   const decorations: Range<Decoration>[] = [];
   const commandScrolls: Range<Decoration>[] = [];
   for (const block of blocks) {
+    if (isHippoBlock(block)) {
+      if (state.readOnly || !insideOutput(block, state)) {
+        decorations.push(Decoration.replace({
+          block: true, widget: new HippoWidget(settings.tapMyHippo, block.hippoFarm, state.readOnly ? undefined : remove),
+        }).range(block.from, block.to));
+      }
+      continue;
+    }
     if (settings.commandBlocks && block.commandFrom !== undefined) continue;
     const foldState = folds.get(block.from) ?? 'expanded';
     const terminal = settings.commandBlocks ? block.terminal : undefined;
@@ -819,7 +875,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
         !transaction.effects.some((effect) =>
         effect.is(toggleFold) || effect.is(changeOutput) || effect.is(changeCommandWrap)) &&
           !(transaction.selection && (previous.folds.size > 0 || previous.outputs.size > 0 ||
-            previous.blocks.some((block) => block.language === 'ansi')))) return previous;
+            previous.blocks.some((block) => block.language === 'ansi' || isHippoBlock(block))))) return previous;
       const blocks = reparse ? readBlocks(livePreview, transaction.state.doc.toString()) : previous.blocks;
       const settings = getSettings();
       const byFrom = new Map(blocks.map((block) => [block.from, block]));
@@ -1018,15 +1074,16 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
     };
   }
 
-  function remove(view: EditorView, commandFrom: number, scope: 'block' | 'output'): void {
+  const remove: DeleteBlock = (view, blockFrom, scope) => {
     const state = view.state;
     const { blocks, livePreview } = state.field(field);
-    const command = blocks.find((block) => block.from === commandFrom && block.terminal);
-    const output = command?.terminal?.output;
-    const first = scope === 'output' ? output : command;
+    const block = blocks.find((block) => block.from === blockFrom && (scope === 'hippo' ? isHippoBlock(block) : block.terminal));
+    const output = block?.terminal?.output;
+    const first = scope === 'output' ? output : block;
     const last = output ?? first;
     if (!livePreview || state.readOnly || !first || !last || first.unclosed || last.unclosed) {
-      new Notice('Motto Code Block: This terminal block is no longer available for deletion.');
+      const kind = scope === 'hippo' ? 'Hippo' : 'terminal';
+      new Notice(`Motto Code Block: This ${kind} block is no longer available for deletion.`);
       return;
     }
     let from = first.from;
@@ -1046,7 +1103,7 @@ export function createEditorHeaders(getSettings: () => MottoSettings): {
     }
     view.dispatch({ changes: { from, to, insert }, selection: { anchor: from }, userEvent: 'motto.delete-block' });
     view.focus();
-  }
+  };
   return {
     extension: [
       field,

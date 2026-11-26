@@ -1,7 +1,66 @@
 import { describe, expect, it } from 'vitest';
-import { parseCodeBlocks, parseInfo } from '../src/codeblock';
+import { isCodeBlockEnabled, parseCodeBlocks, parseInfo } from '../src/codeblock';
 import { splitCommands } from '../src/commands';
 import { DEFAULT_SETTINGS, parseSettings } from '../src/settings';
+
+describe('Hippo blocks', () => {
+  it.each([
+    ['', { count: 10, height: 240, speed: 3 }],
+    ['hippo_num=18 farm_height:360px hippo_speed=4', { count: 18, height: 360, speed: 4 }],
+    ['hippo_num=50 farm_height=1000 hippo_speed=9', { count: 30, height: 800, speed: 5 }],
+    ['hippo_num=0 farm_height=-1px hippo_speed=0', { count: 1, height: 120, speed: 1 }],
+    ['hippo_num=slow farm_height=2em hippo_speed=2.5', { count: 10, height: 240, speed: 3 }],
+    ['hippo_num=8 farm_height=280px hippo_speed:"', { count: 8, height: 280, speed: 3 }],
+    ['n=18 h=360px s=4', { count: 10, height: 240, speed: 3 }],
+  ])('normalizes farm options %j without diagnostics', (options, expected) => {
+    const { blocks, diagnostics } = parseCodeBlocks(`\`\`\`hippo farm ${options}\n\`\`\``);
+    expect(blocks[0]?.hippoFarm).toEqual({
+      ...expected, size: 46, hippoColor: 'random', farmColor: 'default', speechBubbleColor: 'same',
+    });
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('parses the named Farm options', () => {
+    const info = 'hippo farm hippo_num=50 hippo_size=72px hippo_speed=1 ' +
+      'hippo_color=red farm_height:360px farm_color=BLUE tap_my_hippo=false speech_bubble_color=rgb(248, 255, 0)';
+    expect(parseInfo(info)).toMatchObject({
+      hippoFarm: {
+        count: 30, size: 72, speed: 1, hippoColor: '#cc4449', height: 360,
+        farmColor: 'var(--color-blue, #356ea6)', tapMyHippo: false, speechBubbleColor: '#f8ff00',
+      },
+      diagnostics: [],
+    });
+  });
+
+  it('falls back for invalid values without skipping following Farm options', () => {
+    expect(parseInfo('hippo farm hippo_num= hippo_size=999 farm_color=rgb(999, 5, 5) ' +
+      'hippo_color="rgb(16 32 48)" tap_my_hippo=yes speech_bubble_color=invalid')).toMatchObject({
+      hippoFarm: { count: 10, size: 96, hippoColor: '#102030', farmColor: 'default', speechBubbleColor: 'same' },
+      diagnostics: [],
+    });
+    expect(parseInfo('hippo farm tap_my_hippo=yes').hippoFarm?.tapMyHippo).toBeUndefined();
+  });
+
+  it('still accepts an explicitly random speech bubble color', () => {
+    expect(parseInfo('hippo farm speech_bubble_color=random').hippoFarm?.speechBubbleColor).toBe('random');
+  });
+
+  it('keeps the big Hippo fence independent of terminal pairing and honors exclusions', () => {
+    const source = '```sh cmd\npwd\n```\n```hippo big cmd\nFallback\n```\n```plaintext\n/output\n```';
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      commandLanguages: ['sh', 'hippo'], outputLanguages: ['hippo', 'plaintext'], languageIncludeList: ['hippo', 'plaintext'],
+    };
+    const [shell, hippo] = parseCodeBlocks(source, settings).blocks;
+    expect(shell?.terminal?.output).toBeUndefined();
+    expect(hippo).toMatchObject({ hippoBig: true, text: 'Fallback' });
+    expect(hippo?.terminal).toBeUndefined();
+    expect(isCodeBlockEnabled(hippo!, { ...settings, languageIncludeList: [] })).toBe(true);
+    expect(isCodeBlockEnabled(hippo!, { ...settings, languageExcludeList: ['hippo'] })).toBe(false);
+    const excluded = parseCodeBlocks(source.replace('hippo big cmd', 'hippo big exclude'), settings).blocks[1]!;
+    expect(isCodeBlockEnabled(excluded, settings)).toBe(false);
+  });
+});
 
 describe('command blocks', () => {
   it.each(['text', 'json', 'xml'])('pairs %s only when configured and both adjacent blocks are eligible', (language) => {

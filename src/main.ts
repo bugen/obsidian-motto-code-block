@@ -1,6 +1,7 @@
 import { MarkdownView, Plugin, TFile } from 'obsidian';
 import { createEditorHeaders } from './editor';
 import type { NoteFoldAction } from './folding';
+import { insertHippo } from './hippo-block';
 import { ReadingHeaders } from './reading';
 import { parseSettings, type MottoSettings } from './settings';
 import { MottoSettingsTab } from './settings-tab';
@@ -87,6 +88,19 @@ export default class MottoCodeBlockPlugin extends Plugin {
             return true;
           }
           return this.editorHeaders?.setNoteFolds(view.editor, action, checking) ?? false;
+        },
+      });
+    }
+    for (const [kind, { id, name }] of [
+      ['big', { id: 'insert-big-hippo', name: 'Hippo Big' }],
+      ['farm', { id: 'insert-hippo-farm', name: 'Hippo Farm' }],
+    ] as const) {
+      this.addCommand({
+        id, name,
+        editorCheckCallback: (checking, editor, view) => {
+          if (!(view instanceof MarkdownView) || !view.file || view.getMode() !== 'source') return false;
+          if (!checking) insertHippo(editor, kind);
+          return true;
         },
       });
     }

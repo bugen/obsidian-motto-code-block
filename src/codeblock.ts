@@ -1,4 +1,5 @@
 import { parser } from '@lezer/markdown';
+import { solidHippoColor } from './hippo-colors';
 import { DEFAULT_SETTINGS, isLanguageEnabled, type MottoSettings } from './settings';
 
 export interface TerminalContext {
@@ -15,6 +16,17 @@ export interface TerminalBlock extends TerminalContext {
   output?: CodeBlock;
   session?: CommandSessionPosition;
   sessionFrom?: number;
+}
+
+export interface HippoFarmOptions {
+  count: number;
+  size: number;
+  height: number;
+  speed: number;
+  hippoColor: string;
+  farmColor: string;
+  tapMyHippo?: boolean;
+  speechBubbleColor: string;
 }
 
 export interface CodeBlock {
@@ -35,8 +47,23 @@ export interface CodeBlock {
   fold?: boolean;
   previewLines?: number;
   ansiRaw?: true;
+  hippoBig?: true;
+  hippoFarm?: HippoFarmOptions;
   text: string;
 }
+
+export function isHippoBlock(block: CodeBlock): boolean {
+  return Boolean(block.hippoBig || block.hippoFarm);
+}
+
+function boundedInteger(value: string | undefined, min: number, max: number, fallback: number): number {
+  return value !== undefined && /^[+-]?\d+$/.test(value) ? Math.min(max, Math.max(min, Number(value))) : fallback;
+}
+
+const farmOptionNames = new Set([
+  'hippo_num', 'hippo_size', 'hippo_speed', 'hippo_color', 'farm_height', 'farm_color', 'tap_my_hippo', 'speech_bubble_color',
+]);
+const farmColorOptions = new Set(['hippo_color', 'farm_color', 'speech_bubble_color']);
 
 const foldOptions = new Map([['fold', true], ['expand', false], ['unfold', false]]);
 const valueOptions = new Map([
@@ -59,7 +86,7 @@ function infoLanguage(info: string): { language: string; optionsFrom: number } {
   return { language, optionsFrom: info.length - trimmed.length + (language ? languageMatch![0].length : 0) };
 }
 
-function* infoOptions(info: string, index: number) {
+function* infoOptions(info: string, index: number, hippo = false) {
   while (index < info.length) {
     const space = index;
     while (index < info.length && /\s/.test(info[index]!)) index++;
@@ -75,7 +102,12 @@ function* infoOptions(info: string, index: number) {
       continue;
     }
     index++;
+    const separatorEnd = index;
     while (index < info.length && /\s/.test(info[index]!)) index++;
+    if (hippo && farmOptionNames.has(key) && index > separatorEnd && /^[^\s:=]+[=:]/.test(info.slice(index))) {
+      yield { key, space, from, to: separatorEnd, value: undefined, unclosed: false };
+      continue;
+    }
     const quote = info[index];
     let value = '';
     if (quote === '"' || quote === "'") {
@@ -93,7 +125,9 @@ function* infoOptions(info: string, index: number) {
       index++;
     } else {
       const valueStart = index;
-      while (index < info.length && !/\s/.test(info[index]!)) index++;
+      const rgb = hippo && farmColorOptions.has(key) ? /^rgb\([^()]*\)(?=\s|$)/i.exec(info.slice(index)) : null;
+      if (rgb) index += rgb[0].length;
+      else while (index < info.length && !/\s/.test(info[index]!)) index++;
       value = info.slice(valueStart, index);
     }
     yield { key, space, from, to: index, value, unclosed: false };
@@ -127,11 +161,14 @@ export function parseInfo(info: string): {
   language: string; title: string; hasParameters: boolean;
   exclude?: boolean;
   explicitCommand?: true;
+  hippoBig?: true;
+  hippoFarm?: HippoFarmOptions;
   context?: TerminalContext;
   headerStyle?: string; fold?: boolean; previewLines?: number; ansiRaw?: true; diagnostics: string[];
 } {
   const { language, optionsFrom } = infoLanguage(info);
   const values = new Map<string, string>();
+  const farmValues = new Map<string, string | undefined>();
   const diagnostics: string[] = [];
   let hasParameters = false;
   let hasPromptParameters = false;
@@ -139,7 +176,13 @@ export function parseInfo(info: string): {
   let previewLines: number | undefined;
   let command = false;
   let exclude = false;
-  for (const { key, value, unclosed } of infoOptions(info, optionsFrom)) {
+  let hippoBig = false;
+  let farm = false;
+  for (const { key, value, unclosed } of infoOptions(info, optionsFrom, language === 'hippo')) {
+    if (language === 'hippo' && farmOptionNames.has(key)) {
+      farmValues.set(key, unclosed ? undefined : value?.trim().toLowerCase());
+      continue;
+    }
     const hasValue = value !== undefined;
     const valueKey = key === 'encoding' && language === 'ansi' ? key : valueOptions.get(key);
     if (hasValue && (valueKey === 'prompt' || valueKey === 'prompt-text' ||
@@ -155,6 +198,8 @@ export function parseInfo(info: string): {
         previewLines = undefined;
       } else if (key === 'cmd' || key === 'command') command = true;
       else if (key === 'exclude') exclude = true;
+      else if (key === 'big' && language === 'hippo') hippoBig = true;
+      else if (key === 'farm' && language === 'hippo') farm = true;
       else if (key === 'prompt-display') diagnostics.push('The "prompt-display" option requires "inline" or "hide".');
       else if (valueKey === 'encoding') diagnostics.push('The "encoding" option requires "raw".');
       continue;
@@ -205,12 +250,24 @@ export function parseInfo(info: string): {
   }
   const encoding = values.get('encoding')?.toLowerCase();
   if (encoding !== undefined && encoding !== 'raw') diagnostics.push('Invalid "encoding" value. Use "raw".');
+  const tap = farmValues.get('tap_my_hippo');
+  const bubble = farmValues.get('speech_bubble_color');
   return {
     language,
     title: values.get('file') || values.get('title') || '',
     hasParameters: hasParameters || (hasPromptParameters && context.promptDisplay === undefined),
     ...(exclude ? { exclude: true } : {}),
     ...(command ? { explicitCommand: true } : {}),
+    ...(farm ? { hippoFarm: {
+      count: boundedInteger(farmValues.get('hippo_num'), 1, 30, 10),
+      size: boundedInteger(farmValues.get('hippo_size')?.replace(/px$/, ''), 16, 96, 46),
+      height: boundedInteger(farmValues.get('farm_height')?.replace(/px$/, ''), 120, 800, 240),
+      speed: boundedInteger(farmValues.get('hippo_speed'), 1, 5, 3),
+      hippoColor: solidHippoColor(farmValues.get('hippo_color')) ?? 'random',
+      farmColor: solidHippoColor(farmValues.get('farm_color'), true) ?? 'default',
+      ...(tap === 'true' || tap === 'false' ? { tapMyHippo: tap === 'true' } : {}),
+      speechBubbleColor: bubble === 'random' ? bubble : solidHippoColor(bubble) ?? 'same',
+    } } : hippoBig ? { hippoBig: true } : {}),
     ...(command || Object.keys(context).length ? { context } : {}),
     ...(validStyle ? { headerStyle } : {}),
     ...(fold !== undefined ? { fold } : {}),
@@ -220,7 +277,7 @@ export function parseInfo(info: string): {
   };
 }
 
-function frontmatterEnd(source: string): number {
+export function frontmatterEnd(source: string): number {
   const opening = /^(?:\uFEFF)?---[ \t]*\r?\n/.exec(source);
   if (!opening) return 0;
   const closing = /^(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/gm;
@@ -243,6 +300,7 @@ function lineAt(starts: number[], position: number): number {
 export function isCodeBlockEnabled(
   block: CodeBlock, settings: Pick<MottoSettings, 'commandBlocks' | 'languageIncludeList' | 'languageExcludeList'>,
 ): boolean {
+  if (isHippoBlock(block)) return !block.exclude && !settings.languageExcludeList.includes(block.language);
   return !block.exclude && (Boolean(settings.commandBlocks && block.terminal) || isLanguageEnabled(block.language, settings));
 }
 
@@ -271,7 +329,10 @@ export function parseCodeBlocks(
       const startLine = lineAt(starts, base + node.from);
       const endLine = lineAt(starts, base + node.to);
       const closed = node.getChildren('CodeMark').length > 1;
-      const isExplicitCommand = info.explicitCommand && !info.exclude && isCommandLanguage(info.language);
+      const hippoBig = closed && info.hippoBig;
+      const hippoFarm = closed && info.hippoFarm;
+      const terminal = !info.hippoBig && !info.hippoFarm && !info.exclude && isCommandLanguage(info.language);
+      const isExplicitCommand = terminal && info.explicitCommand;
       if (isExplicitCommand) {
         explicitCommands.add(starts[startLine]!);
       }
@@ -288,7 +349,9 @@ export function parseCodeBlocks(
         ...(isExplicitCommand && infoNode ? { infoRange: { from: base + infoNode.from, to: base + infoNode.to } } : {}),
         ...(info.exclude ? { exclude: true } : {}),
         ...(!closed ? { unclosed: true } : {}),
-        ...(!info.exclude && info.context && isCommandLanguage(info.language) ? { terminal: { ...info.context } } : {}),
+        ...(hippoBig ? { hippoBig: true } : {}),
+        ...(hippoFarm ? { hippoFarm } : {}),
+        ...(terminal && info.context ? { terminal: { ...info.context } } : {}),
         ...(info.headerStyle !== undefined ? { headerStyle: info.headerStyle } : {}),
         ...(info.fold !== undefined ? { fold: info.fold } : {}),
         ...(info.previewLines !== undefined ? { previewLines: info.previewLines } : {}),
@@ -311,7 +374,8 @@ export function parseCodeBlocks(
   for (let index = 0; index + 1 < blocks.length; index++) {
     const command = blocks[index]!;
     const output = blocks[index + 1]!;
-    if (command.exclude || output.exclude || command.commandFrom !== undefined || explicitCommands.has(output.from) ||
+    if (isHippoBlock(command) || isHippoBlock(output) || command.exclude || output.exclude ||
+        command.commandFrom !== undefined || explicitCommands.has(output.from) ||
         !isCommandLanguage(command.language) || !settings.outputLanguages.includes(output.language || 'plaintext') ||
         !adjacent.has(command.from) || !isLanguageEnabled(output.language, settings)) continue;
     command.terminal ??= {};

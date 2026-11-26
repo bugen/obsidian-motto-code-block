@@ -1,11 +1,13 @@
 import { MarkdownRenderChild, type MarkdownPostProcessorContext } from 'obsidian';
-import { isCodeBlockEnabled, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
+import { isCodeBlockEnabled, isHippoBlock, parseCodeBlocks, reportDiagnostics, type CodeBlock } from './codeblock';
 import { copyCode, createExpandFooter, createHeader, setHeaderFoldState } from './render';
 import { ReadingCodeLayout, shouldShowLineNumbers } from './line-numbers';
 import type { FoldState, MottoSettings } from './settings';
 import { hasFoldableHeader, initialOutputState, nextFoldState, nextOutputState, noteFoldOverride, noteOutputOverride, outputPreviewLineCount, previewLineCount, resolveFoldState, type NoteFoldAction, type OutputState } from './folding';
 import { ReadingCommandView, ReadingOutputView, matchesReadingCode } from './command-reading';
 import { ansiPreview } from './command-render';
+import { HippoBlockView } from './hippo-block';
+import { sameFarm } from './hippo-farm';
 import { splitCommands } from './commands';
 import { forcesPromptHeader, SessionMenu, withSessionPrompt, type SessionOutputAction, type SessionPromptMode } from './session-menu';
 
@@ -133,7 +135,7 @@ export class ReadingHeaders {
         mount.header?.remove();
         mount.expandFooter?.remove();
         mount.layout?.destroy();
-        pre.classList.remove('motto-code-block', 'motto-code-block-collapsed');
+        pre.classList.remove('motto-code-block', 'motto-code-block-collapsed', 'motto-hippo-native');
         this.mounts.delete(pre);
         if (!this.disposed) this.renderOutputs();
       });
@@ -362,7 +364,27 @@ export class ReadingHeaders {
       mount.sessionMenu?.destroy();
       delete mount.sessionMenu;
     }
-    if (!isCodeBlockEnabled(mount.block, settings)) {
+    const enabled = isCodeBlockEnabled(mount.block, settings);
+    if (enabled && isHippoBlock(mount.block)) {
+      mount.expandFooter?.remove();
+      mount.expandFooter = null;
+      pre.classList.remove('motto-code-block', 'motto-code-block-collapsed');
+      const current = mount.layout;
+      let layout: HippoBlockView;
+      if (current instanceof HippoBlockView && sameFarm(current.farm, mount.block.hippoFarm)) layout = current;
+      else {
+        current?.destroy();
+        layout = new HippoBlockView(pre.ownerDocument, mount.block.hippoFarm);
+        pre.before(layout.element);
+        mount.layout = layout;
+      }
+      layout.element.hidden = pre.hidden;
+      layout.setSpeech(settings.tapMyHippo);
+      pre.classList.add('motto-hippo-native');
+      return;
+    }
+    pre.classList.remove('motto-hippo-native');
+    if (!enabled) {
       mount.expandFooter?.remove();
       mount.expandFooter = null;
       mount.layout?.destroy();

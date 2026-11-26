@@ -1,4 +1,4 @@
-import type { CodeBlock } from './codeblock';
+import { isHippoBlock, type CodeBlock } from './codeblock';
 import { shouldShowHeader, type FoldState, type MottoSettings } from './settings';
 
 export interface OutputState {
@@ -10,7 +10,7 @@ export type NoteFoldAction = 'fold-blocks' | 'expand-blocks' | 'close-outputs' |
 type OutputVisibilityAction = Extract<NoteFoldAction, 'close-outputs' | 'open-outputs'>;
 
 export function hasFoldableHeader(block: CodeBlock, settings: MottoSettings): boolean {
-  return !(settings.commandBlocks && block.commandFrom !== undefined) &&
+  return !isHippoBlock(block) && !(settings.commandBlocks && block.commandFrom !== undefined) &&
     shouldShowHeader(settings.headerDisplay, block.hasParameters);
 }
 

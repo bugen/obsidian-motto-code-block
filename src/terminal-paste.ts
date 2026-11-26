@@ -1,4 +1,5 @@
 import { Notice, type Editor, type EditorPosition } from 'obsidian';
+import { padMarkdownBlock } from './markdown-insert';
 import type { MottoSettings } from './settings';
 import { compilePromptPatterns, createPromptDetector, type TranscriptShellMode } from './terminal-prompt';
 import { formatTerminalTranscript, parseTerminalTranscript } from './terminal-transcript';
@@ -46,11 +47,5 @@ export async function pasteTerminalTranscript(
     new Notice(`Motto Code Block: ${messages[parsed.error]}`);
     return;
   }
-  const before = editor.getLine(from.line).slice(0, from.ch);
-  const after = editor.getLine(to.line).slice(to.ch);
-  const leading = before.trim() ? '\n\n'
-    : before.length || (from.line > 0 && editor.getLine(from.line - 1).trim()) ? '\n' : '';
-  const trailing = after.trim() || (!after.length && to.line < editor.lastLine() && editor.getLine(to.line + 1).trim())
-    ? '\n\n' : '\n';
-  editor.replaceSelection(leading + formatTerminalTranscript(parsed.entries, keepAnsi) + trailing);
+  editor.replaceSelection(padMarkdownBlock(editor, formatTerminalTranscript(parsed.entries, keepAnsi), from, to));
 }

@@ -313,8 +313,7 @@ export class MottoSettingsTab extends PluginSettingTab {
       noCommands);
     this.addThemeGroup(output, (parent, mode, refresh) => this.addOutputToggleAppearance(parent, mode, refresh));
     this.addToggle(output, 'tapMyHippo', 'Tap my hip-po!',
-      'Let hippos speak.',
-      noCommands);
+      'Let Hippo blocks and Hippo output toggles speak.');
   }
 
   private addThemeSelector(parent = this.containerEl): void {

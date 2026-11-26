@@ -4,6 +4,7 @@ import { URL as NodeURL } from 'node:url';
 import { App, type Editor, type MarkdownPostProcessor, type MarkdownPostProcessorContext, type MarkdownRenderChild } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ansiIcon from '../src/ansi.svg';
+import hippoIcon from '../src/hippo.svg';
 import MottoCodeBlockPlugin from '../src/main';
 import { ReadingHeaders } from '../src/reading';
 import { DEFAULT_SETTINGS, parseSettings, type MottoSettings } from '../src/settings';
@@ -58,6 +59,145 @@ afterEach(() => {
 });
 
 describe('reading mode headers', () => {
+  it('mounts an empty Farm fence with clamped count and height and removes it on unload', async () => {
+    const { renderer, context, children } = fixture('```hippo farm hippo_num=50 farm_height=900\n```');
+    const { section, pre } = block('', 'hippo');
+    pre.replaceChildren();
+    await renderer.process(section, context);
+    const farm = section.querySelector<HTMLElement>('.motto-hippo-farm')!;
+    expect(farm.style.height).toBe('800px');
+    expect(farm.querySelectorAll('.motto-hippo-tap')).toHaveLength(30);
+    expect(farm.querySelector('[aria-label="Edit Hippo block"]')).toBeNull();
+    expect(farm.querySelector('[aria-label="Delete Hippo block"]')).toBeNull();
+    expect(pre.classList.contains('motto-hippo-native')).toBe(true);
+    children[0]!.unload();
+    expect(farm.isConnected).toBe(false);
+    expect(pre.classList.contains('motto-hippo-native')).toBe(false);
+  });
+
+  it('opens and closes the Farm option guide when the fence contains fallback text', async () => {
+    const text = 'Sorry... To see this block, open this note in Obsidian with the Motto Code Block plugin installed.\n' +
+      'https://github.com/bugen/obsidian-motto-code-block';
+    const { renderer, context } = fixture(`\`\`\`hippo farm farm_height=120\n${text}\n\`\`\``);
+    const { section, pre } = block(text, 'hippo');
+    await renderer.process(section, context);
+    expect(pre.classList.contains('motto-hippo-native')).toBe(true);
+    const help = section.querySelector<HTMLButtonElement>('.motto-hippo-tools > [aria-label="Hippo Farm options"]')!;
+    const dialog = section.querySelector('dialog')!;
+    expect(dialog.open).toBe(false);
+    help.click();
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('pre')?.textContent).toContain('```hippo farm hippo_num=18 farm_height=360px');
+    expect([...dialog.querySelectorAll('dt')].map((term) => term.textContent)).toEqual([
+      'hippo_num', 'hippo_size', 'hippo_speed', 'hippo_color', 'farm_height', 'farm_color', 'tap_my_hippo', 'speech_bubble_color',
+    ]);
+    dialog.querySelector('button')!.click();
+    expect(dialog.open).toBe(false);
+  });
+
+  it('lets the invited Farm hippo reply without another hippo taking its place', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { renderer, context } = fixture('```hippo farm hippo_num=2\n```', { ...DEFAULT_SETTINGS, tapMyHippo: true });
+    const { section } = block('', 'hippo');
+    await renderer.process(section, context);
+    const buttons = [...section.querySelectorAll<HTMLButtonElement>('.motto-hippo-tap')];
+    for (const button of buttons) vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 120, 40, 28));
+    const bubble = () => document.querySelector('.motto-hippo-speech');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(document.querySelectorAll('.motto-hippo-speech')).toHaveLength(1);
+    expect(bubble()?.textContent).toBe('Tap to hip-po!');
+    buttons.find((button) => !('mottoHippoSpeaking' in button.dataset))!.click();
+    expect(bubble()?.textContent).toBe('Tap to hip-po!');
+    buttons.find((button) => 'mottoHippoSpeaking' in button.dataset)!.click();
+    expect(bubble()?.textContent).toBe('You rang?');
+  });
+
+  it('honors Farm speech overrides and matches the bubble to its hippo by default', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const source = [
+      '```hippo farm hippo_num=1 tap_my_hippo=true\n```',
+      '```hippo farm hippo_num=1 tap_my_hippo=false speech_bubble_color=white\n```',
+    ].join('\n\n');
+    const { renderer, context, updateSettings, children } = fixture(source);
+    const sections = [block('', 'hippo'), block('', 'hippo')];
+    for (const { section } of sections) await renderer.process(section, context);
+    const buttons = sections.map(({ section }) => section.querySelector<HTMLButtonElement>('.motto-hippo-tap')!);
+    for (const button of buttons) vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 120, 40, 28));
+    const bubble = () => document.querySelector<HTMLElement>('.motto-hippo-speech');
+    const color = () => bubble()?.style.getPropertyValue('--motto-hippo-bubble-color');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(bubble()?.textContent).toBe('Tap to hip-po!');
+    expect(color()).toBe(buttons[0]!.style.color);
+    const previous = color();
+    buttons[0]!.click();
+    expect(bubble()?.textContent).toBe('You rang?');
+    expect(color()).not.toBe(previous);
+    expect(color()).toBe(buttons[0]!.style.color);
+    updateSettings({ ...DEFAULT_SETTINGS, tapMyHippo: true });
+    children[0]!.unload();
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(bubble()).toBeNull();
+  });
+
+  it('replaces only the big Hippo fence, changes color on tap, and preserves the fallback', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const text = 'Sorry... To see this block, open this note in Obsidian with the Motto Code Block plugin installed.\n' +
+      'https://github.com/bugen/obsidian-motto-code-block';
+    const source = `\`\`\`hippo big\n${text}\n\`\`\`\n\n\`\`\`hippo\nPlain fence\n\`\`\``;
+    const settings = { ...DEFAULT_SETTINGS, headerDisplay: 'always', tapMyHippo: true } as const;
+    const { renderer, context, children } = fixture(source, settings);
+    const { section, pre, code } = block(text, 'hippo');
+    const plain = block('Plain fence', 'hippo');
+    section.append(plain.pre);
+    await renderer.process(section, context);
+
+    const tap = section.querySelector<HTMLButtonElement>('.motto-hippo-tap')!;
+    const mark = tap.querySelector<HTMLElement>('.motto-hippo-mark')!;
+    const preview = tap.closest('.motto-hippo-block')!;
+    expect(tap.getAttribute('aria-label')).toBe('Tap to hip-po!');
+    expect(mark.style.maskImage).toContain(hippoIcon);
+    expect(pre.classList.contains('motto-hippo-native')).toBe(true);
+    expect(plain.pre.classList.contains('motto-hippo-native')).toBe(false);
+    expect(section.querySelector('.motto-header')).toBeNull();
+    const firstColor = mark.style.color;
+    tap.click();
+    expect(mark.style.color).not.toBe(firstColor);
+    expect(preview.textContent).toBe('');
+    expect(preview.querySelectorAll('button')).toHaveLength(1);
+    children[0]!.unload();
+    expect(section.querySelector('.motto-hippo-block')).toBeNull();
+    expect(pre.classList.contains('motto-hippo-native')).toBe(false);
+    expect(code.textContent).toBe(`${text}\n`);
+  });
+
+  it('lets Big Hippo invite and reply in Reading view without Command Blocks', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const settings = { ...DEFAULT_SETTINGS, commandBlocks: false, tapMyHippo: true };
+    const { renderer, context, children } = fixture('```hippo big\nFallback\n```', settings);
+    const { section } = block('Fallback', 'hippo');
+    await renderer.process(section, context);
+    const button = section.querySelector<HTMLButtonElement>('.motto-hippo-tap')!;
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 120, 400, 275));
+    const bubble = () => document.querySelector('.motto-hippo-speech');
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    button.click();
+    expect(bubble()).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(bubble()?.textContent).toBe('Tap my hip-po!');
+    button.click();
+    expect(bubble()?.textContent).toBe('You rang?');
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(bubble()).toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(bubble()?.textContent).toBe('Tap my hip-po!');
+    children[0]!.unload();
+    expect(bubble()).toBeNull();
+  });
+
   it.each(['light', 'dark'] as const)('uses the %s setting for context colors without changing the symbol', async (mode) => {
     document.body.classList.toggle('theme-dark', mode === 'dark');
     const stylesheet = document.body.createEl('style');

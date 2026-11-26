@@ -381,7 +381,7 @@ describe('settings tab', () => {
     await vi.waitFor(() => { expect(row('Output toggle icon').querySelector('select')?.disabled).toBe(true); });
     expect(row('Output languages').querySelector('textarea')?.disabled).toBe(true);
     expect(row('Command spacing').querySelector('select')?.disabled).toBe(true);
-    expect(row('Tap my hip-po!').querySelector('input')?.disabled).toBe(true);
+    expect(row('Tap my hip-po!').querySelector('input')?.disabled).toBe(false);
     expect(row('Header background').querySelector('select')?.disabled).toBe(false);
     reset('Command blocks');
     await vi.waitFor(() => { expect(row('Output toggle icon').querySelector('select')?.disabled).toBe(false); });
